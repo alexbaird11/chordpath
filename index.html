@@ -126,6 +126,7 @@
           <button id="micBtn" onclick="toggleMic()">mic off</button>
           <button id="midiBtn" onclick="toggleMidi()">MIDI off</button>
           <button onclick="simulateCorrect()">simulate correct</button>
+          <label class="chk" style="margin-left:4px"><input type="checkbox" id="chkNoteLabels" checked onchange="drawStaff()"> note labels</label>
         </div>
         <div id="hintText" class="label"></div>
       </div>
@@ -477,7 +478,8 @@ function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass,ink2){
   if(y>top+2*lg){ctx.moveTo(x+r,y);ctx.lineTo(x+r,y-lg*3.5)}
   else{ctx.moveTo(x-r,y);ctx.lineTo(x-r,y+lg*3.5)}
   ctx.stroke();
-  if(hi&&ink2){
+  const showLabels=document.getElementById('chkNoteLabels');
+  if(hi&&ink2&&(!showLabels||showLabels.checked)){
     ctx.fillStyle=color;ctx.font='10px IBM Plex Mono';ctx.textAlign='center';
     ctx.fillText(nn(midi),x,y>top+2*lg?y-lg*4.2:y+lg*5.2);
   }
@@ -582,7 +584,38 @@ function updateUI(){
   document.getElementById('hardNotes').innerHTML=hard.length?hard.map(([n,c])=>`<span class="note-chip sel" style="cursor:default">${n} ×${c}</span>`).join(''):'play some exercises to see weak spots.';
 }
 
-function simulateCorrect(){checkAnswer([...targetMidis])}
+function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
+
+function playNotes(midis){
+  try{
+    const ctx=getAudioCtx();
+    midis.forEach(midi=>{
+      const freq=midiToFreq(midi);
+      // Piano-like tone: fundamental + harmonics with fast attack, slow decay
+      const harmonics=[1,2,3,4,5,6];
+      const gains=[1,.5,.25,.15,.08,.04];
+      const masterGain=ctx.createGain();
+      masterGain.connect(ctx.destination);
+      const now=ctx.currentTime;
+      const dur=1.4;
+      masterGain.gain.setValueAtTime(0,now);
+      masterGain.gain.linearRampToValueAtTime(0.18,now+0.008);
+      masterGain.gain.exponentialRampToValueAtTime(0.12,now+0.08);
+      masterGain.gain.exponentialRampToValueAtTime(0.001,now+dur);
+      harmonics.forEach((h,i)=>{
+        const osc=ctx.createOscillator();
+        const hGain=ctx.createGain();
+        osc.type='sine';
+        osc.frequency.value=freq*h;
+        hGain.gain.value=gains[i];
+        osc.connect(hGain);hGain.connect(masterGain);
+        osc.start(now);osc.stop(now+dur);
+      });
+    });
+  }catch(e){}
+}
+
+function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis])}
 
 // ——— Microphone ———
 async function toggleMic(){
