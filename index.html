@@ -423,8 +423,9 @@ function drawStaff(){
         currentEx.midis.forEach(m=>{
           drawNote(ctx,m,cx,m<60?bTop:tTop,lg,ink,green,true,m<60,ink2);
         });
-        ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
-        ctx.fillText(currentEx.label,cx,bTop+lg*5+18);
+        const _sl1=document.getElementById('chkNoteLabels');
+        if(!_sl1||_sl1.checked){ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
+        ctx.fillText(currentEx.label,cx,bTop+lg*5+18);}
       }
     }
   } else {
@@ -445,8 +446,9 @@ function drawStaff(){
       } else {
         const cx=W/2;
         currentEx.midis.forEach(m=>drawNote(ctx,m,cx,tTop,lg,ink,green,true,isBass,ink2));
-        ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
-        ctx.fillText(currentEx.label,cx,tTop+lg*5+18);
+        const _sl2=document.getElementById('chkNoteLabels');
+        if(!_sl2||_sl2.checked){ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
+        ctx.fillText(currentEx.label,cx,tTop+lg*5+18);}
       }
     }
   }
