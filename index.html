@@ -26,7 +26,7 @@
     }
   }
   body { font-family: 'IBM Plex Mono', monospace; background: var(--bg3); color: var(--ink); font-size: 13px; min-height: 100vh; }
-  #app { max-width: 760px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+  #app { max-width: 820px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
   .header { display: flex; align-items: baseline; gap: 12px; }
   .title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 500; }
   .subtitle { font-size: 12px; color: var(--ink2); }
@@ -48,6 +48,11 @@
   select, input[type=number], input[type=text] { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--ink); cursor: pointer; }
   input[type=number] { width: 68px; }
   input[type=range] { width: 100%; accent-color: var(--green); }
+  /* Subtle green focus ring — replaces the harsh native blue outline that competed with the sheet music */
+  select:focus, input:focus, button:focus, .tab:focus, .note-chip:focus { outline: none; }
+  select:focus-visible, input:focus-visible, button:focus-visible, .tab:focus-visible, .note-chip:focus-visible {
+    outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--green);
+  }
   .label { font-size: 11px; color: var(--ink2); }
   .sect { font-size: 11px; font-weight: 500; color: var(--ink2); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 7px; margin-top: 14px; }
   .sect:first-child { margin-top: 0; }
@@ -67,12 +72,30 @@
   .beat-dot.active { background: var(--green); border-color: var(--green); }
   .chk { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12px; color: var(--ink); }
   .chk input { cursor: pointer; accent-color: var(--green); width: 14px; height: 14px; }
+  .chk.compact { font-size: 11px; gap: 5px; }
   .note-chip { display: inline-block; font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 0.5px solid var(--border2); margin: 2px; cursor: pointer; color: var(--ink2); user-select: none; transition: all .12s; }
   .note-chip:hover { background: var(--bg2); }
   .note-chip.sel { background: var(--green); color: #fff; border-color: var(--green); }
-  #staffCanvas { width: 100%; display: block; border-radius: var(--radius); border: 0.5px solid var(--border); transition: background .2s; }
-  .piano-wrap { overflow-x: auto; }
+
+  /* ——— Sheet-music-first practice layout ——— */
+  .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar .row { gap: 7px; }
+  .toolbar select { font-size: 11px; padding: 5px 8px; }
+  .toolbar button { font-size: 11px; padding: 5px 11px; }
+  .staff-card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px 16px 12px; }
+  #staffCanvas { width: 100%; display: block; border-radius: var(--radius); transition: background .2s; }
+  .notation-hint { margin-top: 10px; text-align: center; font-size: 13px; color: var(--ink); min-height: 18px; letter-spacing: .01em; }
+  .notation-hint.err { color: var(--red); }
+  .notation-hint.ok { color: var(--green); }
+  /* Piano is a secondary support strip — visually muted so eyes stay on the staff */
+  .piano-strip-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; margin-bottom: 4px; }
+  .piano-wrap { overflow-x: auto; opacity: .7; }
   #pianoCanvas { display: block; margin: 0 auto; }
+  .feedback-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .metrics-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .metric-pill { flex: 1; min-width: 66px; background: var(--bg2); border-radius: var(--radius); padding: 7px 8px; text-align: center; }
+  .metric-pill .n { font-size: 17px; font-weight: 500; line-height: 1.15; color: var(--ink); }
+  .metric-pill .l { font-size: 10px; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 </style>
 </head>
@@ -93,9 +116,10 @@
 
     <!-- PRACTICE TAB -->
     <div id="tab-practice" class="tab-pane active">
-      <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <div class="row" style="gap:7px">
-          <select id="levelSel" onchange="setLevel(+this.value)">
+      <!-- 1. Compact top toolbar -->
+      <div class="toolbar">
+        <div class="row">
+          <select id="levelSel" onchange="setLevel(+this.value)" aria-label="difficulty level">
             <option value="0">1 · single notes</option>
             <option value="1">2 · intervals</option>
             <option value="2">3 · triads</option>
@@ -103,41 +127,61 @@
             <option value="4">5 · progressions</option>
             <option value="5">6 · custom</option>
           </select>
-          <select id="clefSel" onchange="setClef(this.value)">
+          <select id="clefSel" onchange="setClef(this.value)" aria-label="clef">
             <option value="treble">treble clef</option>
             <option value="bass">bass clef</option>
             <option value="grand">grand staff</option>
           </select>
+          <select id="hintModeSel" onchange="setHintMode(this.value)" aria-label="hint mode">
+            <option value="full">full labels</option>
+            <option value="landmarks">landmark labels</option>
+            <option value="intervals">interval hints</option>
+            <option value="none">no hints</option>
+          </select>
+          <label class="chk compact"><input type="checkbox" id="chkForgiving" onchange="setAnswerMode(this.checked)"> forgiving</label>
+          <label class="chk compact"><input type="checkbox" id="chkAdaptive" onchange="setAdaptiveMode(this.checked)"> adaptive</label>
         </div>
-        <div class="row" style="gap:7px">
+        <div class="row">
           <span id="statusPill" class="pill">ready</span>
           <button class="accent" onclick="nextExercise()">next →</button>
         </div>
       </div>
 
-      <canvas id="staffCanvas" height="170"></canvas>
-
-      <div class="piano-wrap" style="margin-top:10px">
-        <canvas id="pianoCanvas" height="82"></canvas>
+      <!-- 2. Large sheet-music card -->
+      <div class="staff-card">
+        <canvas id="staffCanvas" height="190"></canvas>
+        <div id="notationHint" class="notation-hint"></div>
       </div>
 
-      <div class="row" style="margin-top:10px;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <!-- 3. Minimized piano support strip -->
+      <div class="piano-strip-head">
+        <label class="chk compact"><input type="checkbox" id="chkKeyboardGuide" checked onchange="drawPiano()"> keyboard guide</label>
+        <span class="label">support only — read the staff</span>
+      </div>
+      <div class="piano-wrap">
+        <canvas id="pianoCanvas" height="60"></canvas>
+      </div>
+
+      <!-- 4. Compact feedback / input row -->
+      <div class="feedback-row">
         <div class="row" style="gap:6px">
           <button id="micBtn" onclick="toggleMic()">mic off</button>
           <button id="midiBtn" onclick="toggleMidi()">MIDI off</button>
           <button onclick="simulateCorrect()">simulate correct</button>
-          <label class="chk" style="margin-left:4px"><input type="checkbox" id="chkNoteLabels" checked onchange="drawStaff()"> note labels</label>
+          <span id="timingPill" class="pill" style="display:none"></span>
         </div>
         <div id="hintText" class="label"></div>
       </div>
 
-      <div class="grid4" style="margin-top:12px">
-        <div class="metric"><div class="l">correct</div><div class="n" id="mCorrect">0</div></div>
-        <div class="metric"><div class="l">streak</div><div class="n" id="mStreak">0</div></div>
-        <div class="metric"><div class="l">accuracy</div><div class="n" id="mAcc">—</div></div>
-        <div class="metric"><div class="l">xp</div><div class="n" id="mXP">0</div></div>
+      <!-- 5. Compact session metrics row -->
+      <div class="metrics-row">
+        <div class="metric-pill"><div class="l">correct</div><div class="n" id="mCorrect">0</div></div>
+        <div class="metric-pill"><div class="l">streak</div><div class="n" id="mStreak">0</div></div>
+        <div class="metric-pill"><div class="l">accuracy</div><div class="n" id="mAcc">—</div></div>
+        <div class="metric-pill"><div class="l">xp</div><div class="n" id="mXP">0</div></div>
+        <div class="metric-pill"><div class="l">avg time</div><div class="n" id="mAvgTime">—</div></div>
       </div>
-      <div class="progress-bar" style="margin-top:10px"><div class="progress-fill" id="levelProgress" style="width:0%"></div></div>
+      <div class="progress-bar" style="margin-top:12px"><div class="progress-fill" id="levelProgress" style="width:0%"></div></div>
       <div class="label" style="margin-top:5px" id="levelProgressLabel">level 1 · 0/10 to advance</div>
     </div>
 
@@ -250,11 +294,31 @@
         <div class="metric"><div class="l">total xp</div><div class="n" id="stXP">0</div></div>
       </div>
 
+      <div class="sect">suggested next drill</div>
+      <div id="suggestedDrill" class="pill amber" style="margin-bottom:16px">keep practicing</div>
+
       <div class="sect">accuracy by level</div>
       <div id="levelBars" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
 
-      <div class="sect">your weakest notes</div>
+      <div class="sect">response time</div>
+      <div class="grid3" style="margin-bottom:8px">
+        <div class="metric"><div class="l">avg response</div><div class="n" id="stAvgResp">—</div></div>
+        <div class="metric"><div class="l">fastest correct</div><div class="n" id="stFastest">—</div></div>
+        <div class="metric"><div class="l">recent trend</div><div class="n" id="stTrend" style="font-size:14px">—</div></div>
+      </div>
+      <div id="respByLevel" class="label" style="margin-bottom:16px"></div>
+
+      <div class="sect">weak notes (missed)</div>
       <div id="hardNotes" class="label" style="margin-bottom:16px">play some exercises to see weak spots.</div>
+
+      <div class="sect">extra notes played</div>
+      <div id="extraNotes" class="label" style="margin-bottom:16px">—</div>
+
+      <div class="sect">octave errors</div>
+      <div id="octaveErrors" class="label" style="margin-bottom:16px">—</div>
+
+      <div class="sect">rhythm timing</div>
+      <div id="rhythmStats" class="label" style="margin-bottom:16px">no rhythm attempts yet.</div>
 
       <button class="danger" onclick="resetStats()">reset all stats</button>
     </div>
@@ -280,6 +344,15 @@ const TREBLE_MIDI=[60,62,64,65,67,69,71,72,74,76,77,79,81,83,84];
 const BASS_MIDI=[36,38,40,41,43,45,47,48,50,52,53,55,57,59,60];
 const ALL_ROOTS=[60,62,64,65,67,69,71,72];
 
+// Landmark notes anchor a reader's eyes on the staff (middle C, the clef-line notes, octave Cs).
+const LANDMARKS={
+  treble:[60,64,67,72,76],
+  bass:[36,41,43,48,52],
+  grand:[48,52,60,64,67,72]
+};
+
+const STORAGE_KEY='chordpath.v3';
+
 let level=0, clef='treble', currentEx=null, targetMidis=[];
 let score={correct:0,total:0,streak:0,bestStreak:0,xp:0};
 let levelScores=[0,0,0,0,0,0], levelAttempts=[0,0,0,0,0,0], missedNotes={};
@@ -289,6 +362,23 @@ let bpm=80, beatsPerBar=4, beatNote=4, metroOn=false, metroBeat=0, metroTimer=nu
 let customConfig={roots:null,types:null,clefs:['treble'],inversion:'root',rhythm:false,rhythmBPM:80};
 let rhythmTimer=null;
 let _mCtx=null;
+
+// ——— Phase 3 pedagogy state ———
+let hintMode='full';      // 'full' | 'landmarks' | 'intervals' | 'none'
+let answerMode='strict';  // 'strict' | 'forgiving'
+let adaptiveMode=false;
+
+let exerciseStartedAt=null;
+let exerciseScored=false;  // ensure response time is recorded once per exercise
+let responseStats={
+  totalMs:0, count:0, fastestCorrectMs:null,
+  byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
+  recent:[]
+};
+let errorStats={ missingNotes:{}, extraNotes:{}, octaveErrors:{}, intervalErrors:{} };
+
+let rhythmActive=false, rhythmWindowMs=180, currentBeatStartedAt=null, beatAnswered=false;
+let rhythmScore={ onTime:0, early:0, late:0, missed:0 };
 
 function nn(m){return NOTE_NAMES[m%12]+(Math.floor(m/12)-1)}
 function midiToStaffPos(m){return Math.floor(m/12-1)*7+DIATONIC[m%12]}
@@ -302,8 +392,28 @@ function showTab(t){
   });
 }
 
-function setLevel(l){level=l;nextExercise()}
-function setClef(c){clef=c;nextExercise()}
+function setLevel(l){level=l;saveState();nextExercise()}
+function setClef(c){clef=c;saveState();nextExercise()}
+
+function setHintMode(mode){
+  hintMode=mode;
+  const sel=document.getElementById('hintModeSel');
+  if(sel&&sel.value!==mode)sel.value=mode;
+  drawStaff();drawPiano();updateNotationHint();saveState();
+}
+function setAnswerMode(isForgiving){
+  answerMode=isForgiving?'forgiving':'strict';
+  const cb=document.getElementById('chkForgiving');
+  if(cb)cb.checked=(answerMode==='forgiving');
+  saveState();
+}
+function setAdaptiveMode(on){
+  adaptiveMode=on;
+  const cb=document.getElementById('chkAdaptive');
+  if(cb)cb.checked=on;
+  saveState();
+  nextExercise();
+}
 
 function randFrom(arr){return arr[Math.floor(Math.random()*arr.length)]}
 
@@ -318,7 +428,62 @@ function applyInversion(midis,inv){
   return midis;
 }
 
+// ——— Adaptive practice ———
+// Bias the root pool toward pitch classes the learner keeps missing (3+ misses).
+function getWeightedRootPool(){
+  const pool=ALL_ROOTS.slice();
+  Object.entries(missedNotes).forEach(([name,cnt])=>{
+    if(cnt>=3){
+      const pc=NOTE_NAMES.indexOf(name.replace(/-?\d+$/,''));
+      if(pc<0)return;
+      ALL_ROOTS.forEach(m=>{
+        if(m%12===pc){ for(let k=0;k<Math.min(cnt,6);k++)pool.push(m); }
+      });
+    }
+  });
+  return pool;
+}
+// Reduce complexity when the current level accuracy is weak; keep the full pool otherwise.
+function getWeightedTypePool(basePool){
+  const a=levelAttempts[Math.min(level,5)], c=levelScores[Math.min(level,5)];
+  const acc=a?c/a:1;
+  if(a>=5 && acc<0.7 && basePool.length>3){
+    // keep the simpler / more common types up front
+    return basePool.slice(0,Math.max(3,Math.ceil(basePool.length/2)));
+  }
+  return basePool;
+}
+function getAdaptiveClef(){
+  // Respect an explicit treble/bass choice; only vary within a grand staff.
+  if(clef!=='grand') return clef;
+  return Math.random()<0.5?'treble':'bass';
+}
+function genAdaptiveExercise(){
+  const useClef=getAdaptiveClef();
+  const isBass=useClef==='bass';
+  const src=isBass?BASS_MIDI:TREBLE_MIDI;
+  const rootPool=getWeightedRootPool();
+  if(level===0){
+    const pc=randFrom(rootPool)%12;
+    const cand=src.filter(m=>m%12===pc);
+    const m=cand.length?randFrom(cand):randFrom(src);
+    return{type:'single',midis:[m],label:nn(m),clef:useClef};
+  }
+  if(level===1){
+    const t=randFrom(getWeightedTypePool(INTERVAL_TYPES));
+    const root=src[Math.floor(Math.random()*(src.length-3))];
+    return{type:'interval',midis:CHORD_TYPES[t].map(i=>root+i),label:`${nn(root)} ${t}`,clef:useClef};
+  }
+  // levels 2 & 3 — triads / sevenths
+  const basePool=level===3?SEVENTH_TYPES:TRIAD_TYPES;
+  const t=randFrom(getWeightedTypePool(basePool));
+  const r=randFrom(rootPool);
+  const midis=CHORD_TYPES[t].map(i=>r+i);
+  return{type:'chord',midis,label:`${NOTE_NAMES[r%12]} ${t}`,clef:useClef};
+}
+
 function genExercise(){
+  if(adaptiveMode && level<=3 && clef!=='grand') return genAdaptiveExercise();
   const cfg=level===5?customConfig:null;
   const clefs=cfg?cfg.clefs:[clef];
   const useClef=randFrom(clefs);
@@ -356,7 +521,6 @@ function genExercise(){
     return{type:'progression',chords:prog,chordIdx:0,midis:CHORD_TYPES[prog[0].t].map(i=>prog[0].r+i),label:'progression',clef:useClef};
   }
   // custom
-  const pool2=[...TRIAD_TYPES,...SEVENTH_TYPES,...INTERVAL_TYPES];
   const types=cfg&&cfg.types&&cfg.types.length?cfg.types:TRIAD_TYPES;
   const t=randFrom(types);
   const roots=cfg&&cfg.roots&&cfg.roots.length?cfg.roots:ALL_ROOTS;
@@ -368,18 +532,55 @@ function genExercise(){
 
 function nextExercise(){
   if(rhythmTimer){clearInterval(rhythmTimer);rhythmTimer=null}
+  rhythmActive=false;currentBeatStartedAt=null;
+  const tp=document.getElementById('timingPill');if(tp)tp.style.display='none';
   currentEx=genExercise();
   targetMidis=[...currentEx.midis];
+  exerciseStartedAt=performance.now();
+  exerciseScored=false;
   setStatus('ready','play the highlighted notes');
-  drawStaff();drawPiano();
+  drawStaff();drawPiano();updateNotationHint();
   if(level===5&&customConfig.rhythm)startRhythmMode();
 }
 
 function setStatus(s,h){
   const p=document.getElementById('statusPill');
   p.className='pill'+(s==='green'?' green':s==='red'?' red':s==='amber'?' amber':'');
-  p.textContent=s==='green'?'correct!':s==='red'?'try again':'ready';
+  p.textContent=s==='green'?'correct':s==='red'?'try again':s==='amber'?'partial':'ready';
   document.getElementById('hintText').textContent=h||'';
+}
+
+// ——— Notation hint (learning labels live here, not on the staff) ———
+function chordShapeHint(ex){
+  const midis=[...ex.midis].sort((a,b)=>a-b);
+  const letters=midis.map(m=>NOTE_NAMES[m%12]).join('–');
+  if(midis.length>=3){
+    const intervals=[];for(let i=1;i<midis.length;i++)intervals.push(midis[i]-midis[i-1]);
+    const allThirds=intervals.every(iv=>iv===3||iv===4);
+    if(allThirds)return `read as stacked thirds: ${letters}`;
+  }
+  if(midis.length===2){
+    const iv=midis[1]-midis[0];
+    const name=Object.keys(CHORD_TYPES).find(k=>CHORD_TYPES[k].length===2&&CHORD_TYPES[k][1]===iv&&INTERVAL_TYPES.includes(k));
+    return `interval ${name||iv+' semitones'}: ${letters}`;
+  }
+  return `${ex.label} · ${letters}`;
+}
+
+function updateNotationHint(text){
+  const el=document.getElementById('notationHint');
+  if(!el)return;
+  el.classList.remove('err','ok');
+  if(typeof text==='string'){el.textContent=text;return;}
+  if(!currentEx){el.textContent='';return;}
+  if(currentEx.type==='progression'){
+    const ch=currentEx.chords[currentEx.chordIdx];
+    el.textContent=`chord ${currentEx.chordIdx+1} of ${currentEx.chords.length} · ${NOTE_NAMES[ch.r%12]} ${ch.t}`;
+    return;
+  }
+  if(hintMode==='none'){ el.textContent=''; return; }
+  if(hintMode==='intervals'){ el.textContent=chordShapeHint(currentEx); return; }
+  el.textContent=currentEx.label;
 }
 
 // ——— Staff Drawing ———
@@ -388,22 +589,84 @@ function getColors(){
   return{
     ink:s.getPropertyValue('--ink').trim()||'#111',
     ink2:s.getPropertyValue('--ink2').trim()||'#666',
+    bg:s.getPropertyValue('--bg').trim()||'#fff',
     green:'#1D9E75',greenLight:'#E1F5EE'
   };
 }
 
+// Scale the canvas backing store to the device pixel ratio so staff lines render crisp,
+// then draw using CSS-pixel coordinates.
+function setupHiDPICanvas(canvas,cssWidth,cssHeight){
+  const dpr=window.devicePixelRatio||1;
+  canvas.style.width=cssWidth+'px';
+  canvas.style.height=cssHeight+'px';
+  canvas.width=Math.round(cssWidth*dpr);
+  canvas.height=Math.round(cssHeight*dpr);
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return ctx;
+}
+
+function isLandmarkNote(midi,clefKey){
+  const key=(clefKey==='grand')?'grand':(clefKey==='bass'?'bass':'treble');
+  return (LANDMARKS[key]||[]).includes(midi);
+}
+function shouldShowNoteLabel(midi,context){
+  if(hintMode==='full')return true;
+  if(hintMode==='landmarks')return isLandmarkNote(midi,(context&&context.clef)||clef);
+  return false;
+}
+
+// Offset noteheads only when two notes sit a second apart (adjacent staff positions),
+// which would otherwise overlap. Thirds stay stacked; accidentals never trigger an offset.
+function layoutChordNoteheads(midis,lg){
+  const sorted=[...midis].sort((a,b)=>a-b);
+  const noteR=lg*.55;
+  const res=sorted.map(m=>({midi:m,xOffset:0}));
+  for(let i=0;i<sorted.length-1;i++){
+    const spA=midiToStaffPos(sorted[i]);
+    const spB=midiToStaffPos(sorted[i+1]);
+    const spDiff=Math.abs(spB-spA);
+    if(spDiff<=1 && res[i].xOffset===0){
+      res[i+1].xOffset=noteR*2.1;
+    }
+  }
+  return res;
+}
+
+// Draw learning labels in a lane to the right of the note cluster with vertical
+// anti-collision, so they never sit on top of noteheads, stems, or each other.
+// Each label gets a background chip so the staff lines don't strike through the text.
+function drawNoteLabels(ctx,notes,cx,lg,color,bg){
+  const list=notes.slice().sort((a,b)=>a.y-b.y);
+  const gap=13, lx=cx+lg*2.7;
+  let prevY=-Infinity;
+  ctx.font='10px IBM Plex Mono';ctx.textBaseline='middle';
+  list.forEach(nd=>{
+    let ly=nd.y; if(ly<prevY+gap)ly=prevY+gap; prevY=ly;
+    const label=nn(nd.midi);
+    const w=ctx.measureText(label).width;
+    ctx.fillStyle=bg;
+    ctx.fillRect(lx-3,ly-6,w+6,12);
+    ctx.fillStyle=color;ctx.textAlign='left';
+    ctx.fillText(label,lx,ly);
+  });
+  ctx.textBaseline='alphabetic';
+}
+
 function drawStaff(){
   const canvas=document.getElementById('staffCanvas');
-  const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
   const isGrand=currentEx&&currentEx.clef==='grand';
-  const H=isGrand?340:220;
-  canvas.width=W;canvas.height=H;
-  const ctx=canvas.getContext('2d');
+  // Let CSS reflow the width (canvas is width:100%) before measuring so resize keeps working.
+  canvas.style.width='';
+  const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
+  const H=isGrand?300:190;
+  const ctx=setupHiDPICanvas(canvas,W,H);
   ctx.clearRect(0,0,W,H);
-  const {ink,ink2,green}=getColors();
+  const {ink,ink2,green,bg}=getColors();
 
   if(isGrand){
-    const tTop=60,bTop=200,lg=13;
+    const tTop=54,bTop=186,lg=13;
     drawLines(ctx,W,tTop,lg,ink);
     drawLines(ctx,W,bTop,lg,ink);
     ctx.fillStyle=ink;
@@ -415,36 +678,23 @@ function drawStaff(){
         currentEx.chords.forEach((ch,ci)=>{
           const x=90+ci*80;const isActive=ci===currentEx.chordIdx;
           CHORD_TYPES[ch.t].map(i=>ch.r+i).forEach(m=>{
-            drawNote(ctx,m,x,m<60?bTop:tTop,lg,ink,isActive?green:'#9FE1CB',isActive,m<60,ink2);
+            drawNote(ctx,m,x,m<60?bTop:tTop,lg,ink,isActive?green:'#9FE1CB',isActive,m<60);
           });
         });
       } else {
         const cx=W/2;
-        const sorted2=[...currentEx.midis].sort((a,b)=>a-b);
-        const sharpPcs2=[1,3,6,8,10];
-        const xOff2=new Map();
-        const noteR2=lg*.55;
-        sorted2.forEach(m=>xOff2.set(m,0));
-        for(let i=0;i<sorted2.length-1;i++){
-          const spA=midiToStaffPos(sorted2[i]);
-          const spB=midiToStaffPos(sorted2[i+1]);
-          const aIsSharp=sharpPcs2.includes(sorted2[i]%12);
-          const bIsSharp=sharpPcs2.includes(sorted2[i+1]%12);
-          const spDiff=Math.abs(spB-spA);
-          if((spDiff===0||spDiff===1)&&!aIsSharp&&!bIsSharp){
-            xOff2.set(sorted2[i+1],noteR2*2.2);
-          }
-        }
-        sorted2.forEach(m=>{
-          drawNote(ctx,m,cx+(xOff2.get(m)||0),m<60?bTop:tTop,lg,ink,green,true,m<60,ink2);
+        const layout=layoutChordNoteheads(currentEx.midis,lg);
+        const labelNotes=[];
+        layout.forEach(({midi,xOffset})=>{
+          const isBass=midi<60;const top=isBass?bTop:tTop;
+          drawNote(ctx,midi,cx+xOffset,top,lg,ink,green,true,isBass);
+          if(shouldShowNoteLabel(midi,{clef:'grand'}))labelNotes.push({midi,y:noteY(midi,top,lg,isBass)});
         });
-        const _sl1=document.getElementById('chkNoteLabels');
-        if(!_sl1||_sl1.checked){ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
-        ctx.fillText(currentEx.label,cx,bTop+lg*5+18);}
+        if(labelNotes.length)drawNoteLabels(ctx,labelNotes,cx,lg,ink2,bg);
       }
     }
   } else {
-    const tTop=70,lg=14;
+    const tTop=64,lg=14;
     const isBass=currentEx&&currentEx.clef==='bass';
     drawLines(ctx,W,tTop,lg,ink);
     ctx.fillStyle=ink;ctx.textAlign='left';
@@ -455,46 +705,25 @@ function drawStaff(){
         currentEx.chords.forEach((ch,ci)=>{
           const x=90+ci*80;const isActive=ci===currentEx.chordIdx;
           CHORD_TYPES[ch.t].map(i=>ch.r+i).forEach(m=>{
-            drawNote(ctx,m,x,tTop,lg,ink,isActive?green:'#9FE1CB',isActive,isBass,ink2);
+            drawNote(ctx,m,x,tTop,lg,ink,isActive?green:'#9FE1CB',isActive,isBass);
           });
         });
       } else {
         const cx=W/2;
-        const sorted=[...currentEx.midis].sort((a,b)=>a-b);
-        // Build x offsets: only offset when two notes share the exact same staff line
-        // AND neither is an accidental of the other (i.e. both are naturals a half-step apart
-        // like E-F or B-C, which have staffPos diff=1 but no accidental needed).
-        // Sharps sit on the same line as their lower natural — do NOT offset them sideways.
-        const sharpPcs=[1,3,6,8,10];
-        const xOffsets=new Map();
-        sorted.forEach(m=>xOffsets.set(m,0));
-        const noteR=lg*.55;
-        for(let i=0;i<sorted.length-1;i++){
-          const spA=midiToStaffPos(sorted[i]);
-          const spB=midiToStaffPos(sorted[i+1]);
-          const aIsSharp=sharpPcs.includes(sorted[i]%12);
-          const bIsSharp=sharpPcs.includes(sorted[i+1]%12);
-          // Only offset if they share the same staff line and neither is an accidental of the other
-          // (same line = spDiff 0 for non-accidental pairs like enharmonics, or spDiff 1 for E/F, B/C)
-          const spDiff=Math.abs(spB-spA);
-          if(spDiff===0&&!aIsSharp&&!bIsSharp){
-            xOffsets.set(sorted[i+1],noteR*2.2);
-          } else if(spDiff===1&&!aIsSharp&&!bIsSharp){
-            // Adjacent naturals (E-F, B-C type) — offset upper note
-            xOffsets.set(sorted[i+1],noteR*2.2);
-          }
-        }
-        sorted.forEach(m=>drawNote(ctx,m,cx+(xOffsets.get(m)||0),tTop,lg,ink,green,true,isBass,ink2));
-        const _sl2=document.getElementById('chkNoteLabels');
-        if(!_sl2||_sl2.checked){ctx.fillStyle=ink2;ctx.font='11px IBM Plex Mono';ctx.textAlign='center';
-        ctx.fillText(currentEx.label,cx,tTop+lg*5+18);}
+        const layout=layoutChordNoteheads(currentEx.midis,lg);
+        const labelNotes=[];
+        layout.forEach(({midi,xOffset})=>{
+          drawNote(ctx,midi,cx+xOffset,tTop,lg,ink,green,true,isBass);
+          if(shouldShowNoteLabel(midi,{clef:currentEx.clef}))labelNotes.push({midi,y:noteY(midi,tTop,lg,isBass)});
+        });
+        if(labelNotes.length)drawNoteLabels(ctx,labelNotes,cx,lg,ink2,bg);
       }
     }
   }
 }
 
 function drawLines(ctx,W,top,lg,ink){
-  ctx.strokeStyle=ink;ctx.lineWidth=.8;
+  ctx.strokeStyle=ink;ctx.lineWidth=1;
   for(let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(60,top+i*lg);ctx.lineTo(W-16,top+i*lg);ctx.stroke()}
 }
 
@@ -504,14 +733,12 @@ function noteY(midi,top,lg,isBass){
   return top+4*lg-steps*(lg/2);
 }
 
-function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass,ink2){
+function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass){
   const y=noteY(midi,top,lg,isBass);
   const r=lg*.55;
-  // Determine if note is an accidental (sharp)
-  // Chromatic steps that are sharps: 1=C#,3=D#,6=F#,8=G#,10=A#
   const sharpPcs=[1,3,6,8,10];
   const isSharp=sharpPcs.includes(midi%12);
-  ctx.strokeStyle=ink;ctx.lineWidth=.8;
+  ctx.strokeStyle=ink;ctx.lineWidth=1;
   const btm=top+4*lg;
   if(y>btm+2){let ly=btm+lg;while(ly<=y+2){ctx.beginPath();ctx.moveTo(x-r*1.6,ly);ctx.lineTo(x+r*1.6,ly);ctx.stroke();ly+=lg}}
   if(y<top-2){let ly=top-lg;while(ly>=y-2){ctx.beginPath();ctx.moveTo(x-r*1.6,ly);ctx.lineTo(x+r*1.6,ly);ctx.stroke();ly-=lg}}
@@ -523,7 +750,7 @@ function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass,ink2){
   if(y>top+2*lg){ctx.moveTo(x+r,y);ctx.lineTo(x+r,y-lg*3.5)}
   else{ctx.moveTo(x-r,y);ctx.lineTo(x-r,y+lg*3.5)}
   ctx.stroke();
-  // Draw sharp symbol to the left of the note head
+  // Accidental sits in the notation layer, to the left of the head (never a learning label).
   if(isSharp){
     ctx.fillStyle=hi?color:ink;
     ctx.font=`bold ${Math.round(lg*1.5)}px serif`;
@@ -531,34 +758,32 @@ function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass,ink2){
     ctx.textBaseline='middle';
     ctx.fillText('♯',x-r*1.6,y);
     ctx.textBaseline='alphabetic';
-  }
-  const showLabels=document.getElementById('chkNoteLabels');
-  if(hi&&ink2&&(!showLabels||showLabels.checked)){
-    ctx.fillStyle=color;ctx.font='10px IBM Plex Mono';ctx.textAlign='center';
-    // Offset label left for sharp notes to avoid overlap with the natural below
-    const labelX=isSharp?x+r*1.2:x;
-    ctx.fillText(nn(midi),labelX,y>top+2*lg?y-lg*4.2:y+lg*5.2);
+    ctx.textAlign='left';
   }
 }
 
-// ——— Piano Drawing ———
+// ——— Piano Drawing (secondary support strip) ———
 function drawPiano(){
+  const wrap=document.querySelector('.piano-wrap');
+  const guide=document.getElementById('chkKeyboardGuide');
+  if(guide && !guide.checked){ if(wrap)wrap.style.display='none'; return; }
+  if(wrap)wrap.style.display='';
   const canvas=document.getElementById('pianoCanvas');
-  // Dynamically extend range to always include all target notes
   const minTarget=targetMidis.length?Math.min(...targetMidis):60;
   const maxTarget=targetMidis.length?Math.max(...targetMidis):72;
   const startM=Math.min(36,minTarget-3);
   const endM=Math.max(84,maxTarget+3);
   const numW=Math.ceil((endM-startM)/12)*7+1;
-  const pw=canvas.parentElement.clientWidth||600;
-  const wW=Math.min(28,Math.floor((pw-8)/numW));
-  const wH=80,bW=Math.floor(wW*.64),bH=Math.floor(wH*.62);
-  canvas.width=numW*wW+2;canvas.height=wH+2;
-  const ctx=canvas.getContext('2d');
-  ctx.clearRect(0,0,canvas.width,wH+2);
+  const pw=(wrap&&wrap.clientWidth)||canvas.parentElement.clientWidth||600;
+  const wW=Math.min(26,Math.floor((pw-8)/numW));
+  const wH=58,bW=Math.floor(wW*.64),bH=Math.floor(wH*.62);
+  const cssW=numW*wW+2, cssH=wH+2;
+  const ctx=setupHiDPICanvas(canvas,cssW,cssH);
+  ctx.clearRect(0,0,cssW,cssH);
   const {ink}=getColors();
   const startOct=Math.floor(startM/12)-1;
   const numOcts=Math.ceil((endM-startM)/12);
+  const showKeyNames=(hintMode==='full');
 
   for(let o=0;o<=numOcts;o++){
     WHITE_KEYS.forEach((ch,wi)=>{
@@ -566,10 +791,11 @@ function drawPiano(){
       if(midi<startM||midi>endM)return;
       const kx=(o*7+wi)*wW+1;
       const hi=targetMidis.includes(midi);
-      ctx.fillStyle=hi?'#9FE1CB':'#fff';
+      // Muted highlight — softer than the staff's target color so the eye favors the staff.
+      ctx.fillStyle=hi?'#D6EFE6':'#fff';
       ctx.strokeStyle=ink;ctx.lineWidth=.5;
       ctx.fillRect(kx,1,wW-1,wH-1);ctx.strokeRect(kx,1,wW-1,wH-1);
-      if(hi){
+      if(hi&&showKeyNames){
         ctx.fillStyle='#085041';ctx.font=`${Math.max(8,Math.floor(wW*.32))}px IBM Plex Mono`;
         ctx.textAlign='center';ctx.fillText(NOTE_NAMES[ch],kx+wW/2,wH-4);
       }
@@ -581,41 +807,114 @@ function drawPiano(){
       if(midi<startM||midi>endM)return;
       const kx=(o*7+off)*wW+1;
       const hi=targetMidis.includes(midi);
-      ctx.fillStyle=hi?'#1D9E75':ink;
+      ctx.fillStyle=hi?'#5FB89B':ink;
       ctx.fillRect(kx,1,bW,bH);
     });
   }
 }
 
-// ——— Answer Checking ———
-function checkAnswer(played){
+// ——— Rhythm timing classification ———
+function classifyTiming(playedAt){
+  if(!rhythmActive || !currentBeatStartedAt || !playedAt) return null;
+  const delta=playedAt-currentBeatStartedAt;
+  if(Math.abs(delta)<=rhythmWindowMs) return 'onTime';
+  return delta<0 ? 'early' : 'late';
+}
+
+// ——— Answer Checking (diagnostic) ———
+function checkAnswer(played,playedAt=null){
   const target=[...targetMidis].sort((a,b)=>a-b);
-  const ok=target.every(m=>played.includes(m));
+  const missing=target.filter(m=>!played.includes(m));
+  const extras=played.filter(p=>!target.includes(p));
+  const octaveErrors=extras.filter(p=>target.some(t=>p%12===t%12 && p!==t));
+
+  const ok = answerMode==='forgiving'
+    ? missing.length===0
+    : missing.length===0 && extras.length===0;
+
+  const timing=classifyTiming(playedAt);
+  if(timing){ rhythmScore[timing]++; beatAnswered=true; }
+
+  const responseMs=(exerciseStartedAt!=null)?performance.now()-exerciseStartedAt:null;
+
   levelAttempts[Math.min(level,5)]++;
+
+  // Diagnostic error stats (missing is empty when the answer is accepted).
+  missing.forEach(m=>{const k=nn(m);errorStats.missingNotes[k]=(errorStats.missingNotes[k]||0)+1;missedNotes[k]=(missedNotes[k]||0)+1;});
+  extras.forEach(p=>{const k=nn(p);
+    if(octaveErrors.includes(p))errorStats.octaveErrors[k]=(errorStats.octaveErrors[k]||0)+1;
+    else errorStats.extraNotes[k]=(errorStats.extraNotes[k]||0)+1;
+  });
+
+  const feedback=buildFeedback(missing,extras,octaveErrors);
+
   if(ok){
     score.correct++;score.total++;score.streak++;score.xp+=(level+1)*8+5;
     if(score.streak>score.bestStreak)score.bestStreak=score.streak;
     levelScores[Math.min(level,5)]++;
-    setStatus('green','');
+    // Record response time once, on the first accepted answer for this exercise.
+    if(!exerciseScored && responseMs!=null){recordResponse(responseMs);exerciseScored=true;}
+    const okMsg=extras.length?('correct · '+feedback):'correct';
+    setStatus('green', okMsg);
+    setNotationHint(okMsg, 'ok');
+    updateTimingPill(timing);
     flashStaff('#9FE1CB');
-    updateUI();
+    updateUI();saveState();
     if(currentEx.type==='progression'&&currentEx.chordIdx<currentEx.chords.length-1){
       currentEx.chordIdx++;
       const ch=currentEx.chords[currentEx.chordIdx];
       targetMidis=CHORD_TYPES[ch.t].map(i=>ch.r+i);
       drawStaff();drawPiano();
-      setTimeout(()=>setStatus('ready','next chord'),350);
+      setTimeout(()=>{setStatus('ready','next chord');updateNotationHint();},350);
     } else {
       setTimeout(nextExercise,650);
     }
   } else {
     score.total++;score.streak=0;
-    target.forEach(m=>{if(!played.includes(m)){const k=nn(m);missedNotes[k]=(missedNotes[k]||0)+1}});
-    setStatus('red','check the green keys on the piano');
+    const msg=feedback||'try again';
+    setStatus('red', msg);
+    setNotationHint(msg, 'err');
+    updateTimingPill(timing);
     flashStaff('#F09595');
-    updateUI();
-    setTimeout(()=>setStatus('ready','try again'),800);
+    updateUI();saveState();
+    setTimeout(()=>{setStatus('ready','try again');updateNotationHint();},1100);
   }
+}
+
+function buildFeedback(missing,extras,octaveErrors){
+  const parts=[];
+  missing.forEach(m=>parts.push('missed '+nn(m)));
+  extras.forEach(p=>{
+    if(octaveErrors.includes(p))parts.push('right note, wrong octave: '+nn(p));
+    else parts.push('extra '+nn(p));
+  });
+  return parts.join(' · ');
+}
+
+function recordResponse(ms){
+  responseStats.totalMs+=ms;responseStats.count++;
+  if(responseStats.fastestCorrectMs==null||ms<responseStats.fastestCorrectMs)responseStats.fastestCorrectMs=ms;
+  const bl=responseStats.byLevel[Math.min(level,5)];
+  bl.totalMs+=ms;bl.count++;
+  responseStats.recent.push(Math.round(ms));
+  if(responseStats.recent.length>10)responseStats.recent.shift();
+}
+
+function setNotationHint(text,cls){
+  const el=document.getElementById('notationHint');
+  if(!el)return;
+  el.textContent=text;
+  el.classList.remove('err','ok');
+  if(cls)el.classList.add(cls);
+}
+
+function updateTimingPill(timing){
+  const tp=document.getElementById('timingPill');
+  if(!tp)return;
+  if(!timing){tp.style.display='none';return;}
+  tp.style.display='';
+  tp.className='pill '+(timing==='onTime'?'green':'amber');
+  tp.textContent=timing==='onTime'?'on time':timing;
 }
 
 function flashStaff(color){
@@ -623,25 +922,113 @@ function flashStaff(color){
   c.style.background=color;setTimeout(()=>c.style.background='',260);
 }
 
+function fmtMs(ms){
+  if(ms==null)return '—';
+  return ms>=1000?(ms/1000).toFixed(1)+'s':Math.round(ms)+'ms';
+}
+
+function getSuggestedDrill(){
+  const octEntries=Object.entries(errorStats.octaveErrors).sort((a,b)=>b[1]-a[1]);
+  const missEntries=Object.entries(errorStats.missingNotes).sort((a,b)=>b[1]-a[1]);
+  const a=levelAttempts[Math.min(level,5)],c=levelScores[Math.min(level,5)];
+  const acc=a?c/a:1;
+  if(octEntries.length && octEntries[0][1]>=3) return 'Practice landmark notes to lock in octaves';
+  if((rhythmScore.early+rhythmScore.late)>=4 && (rhythmScore.early+rhythmScore.late)>rhythmScore.onTime) return 'Slow rhythm mode to 60 bpm';
+  if(missEntries.length && missEntries[0][1]>=3) return `Review notes around ${missEntries[0][0]}`;
+  if(a>=5 && acc<0.7 && hintMode==='none') return `Turn hints on for level ${level+1}`;
+  if(a>=5 && acc>0.9 && hintMode==='full') return `Turn off full labels for level ${level+1}`;
+  if(level===2) return 'Review G–B–D triads';
+  return 'Keep practicing — build your streak';
+}
+
 function updateUI(){
   document.getElementById('mCorrect').textContent=score.correct;
   document.getElementById('mStreak').textContent=score.streak;
   document.getElementById('mAcc').textContent=score.total?Math.round(score.correct/score.total*100)+'%':'—';
   document.getElementById('mXP').textContent=score.xp;
+  document.getElementById('mAvgTime').textContent=responseStats.count?fmtMs(responseStats.totalMs/responseStats.count):'—';
   const lvlXP=levelScores[Math.min(level,5)];
   document.getElementById('levelProgress').style.width=Math.min(100,lvlXP/10*100)+'%';
   document.getElementById('levelProgressLabel').textContent=`level ${level+1} · ${lvlXP}/10 to advance`;
+
   document.getElementById('stTotal').textContent=score.total;
   document.getElementById('stBestStreak').textContent=score.bestStreak;
   document.getElementById('stAcc').textContent=score.total?Math.round(score.correct/score.total*100)+'%':'—';
   document.getElementById('stXP').textContent=score.xp;
+
   const lnames=['single','intervals','triads','7ths','progressions','custom'];
   document.getElementById('levelBars').innerHTML=lnames.map((n,i)=>{
     const a=levelAttempts[i],c=levelScores[i],pct=a?Math.round(c/a*100):0;
     return`<div><div class="row" style="justify-content:space-between;margin-bottom:3px"><span class="label">${n}</span><span class="label">${c}/${a} · ${pct}%</span></div><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div></div>`;
   }).join('');
-  const hard=Object.entries(missedNotes).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // Response time detail
+  document.getElementById('stAvgResp').textContent=responseStats.count?fmtMs(responseStats.totalMs/responseStats.count):'—';
+  document.getElementById('stFastest').textContent=fmtMs(responseStats.fastestCorrectMs);
+  const rec=responseStats.recent;
+  document.getElementById('stTrend').textContent=rec.length?rec.slice(-6).map(fmtMs).join(' '):'—';
+  document.getElementById('respByLevel').innerHTML=lnames.map((n,i)=>{
+    const bl=responseStats.byLevel[i];
+    if(!bl||!bl.count)return '';
+    return `<span class="note-chip sel" style="cursor:default">${n}: ${fmtMs(bl.totalMs/bl.count)}</span>`;
+  }).filter(Boolean).join('')||'no timed answers yet.';
+
+  // Weak / extra / octave notes
+  const hard=Object.entries(errorStats.missingNotes).sort((a,b)=>b[1]-a[1]).slice(0,8);
   document.getElementById('hardNotes').innerHTML=hard.length?hard.map(([n,c])=>`<span class="note-chip sel" style="cursor:default">${n} ×${c}</span>`).join(''):'play some exercises to see weak spots.';
+  const extra=Object.entries(errorStats.extraNotes).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  document.getElementById('extraNotes').innerHTML=extra.length?extra.map(([n,c])=>`<span class="note-chip sel" style="cursor:default">${n} ×${c}</span>`).join(''):'—';
+  const oct=Object.entries(errorStats.octaveErrors).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  document.getElementById('octaveErrors').innerHTML=oct.length?oct.map(([n,c])=>`<span class="note-chip sel" style="cursor:default">${n} ×${c}</span>`).join(''):'—';
+
+  // Rhythm timing breakdown
+  const rTot=rhythmScore.onTime+rhythmScore.early+rhythmScore.late+rhythmScore.missed;
+  document.getElementById('rhythmStats').textContent=rTot
+    ? `on time ${rhythmScore.onTime} · early ${rhythmScore.early} · late ${rhythmScore.late} · missed ${rhythmScore.missed}`
+    : 'no rhythm attempts yet.';
+
+  document.getElementById('suggestedDrill').textContent=getSuggestedDrill();
+}
+
+// ——— Persistence ———
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify({
+      score,levelScores,levelAttempts,missedNotes,errorStats,responseStats,rhythmScore,
+      settings:{level,clef,hintMode,answerMode,adaptiveMode}
+    }));
+  }catch(e){}
+}
+function loadState(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw)return;
+    const d=JSON.parse(raw);
+    if(d.score)score=Object.assign(score,d.score);
+    if(Array.isArray(d.levelScores))levelScores=d.levelScores;
+    if(Array.isArray(d.levelAttempts))levelAttempts=d.levelAttempts;
+    if(d.missedNotes)missedNotes=d.missedNotes;
+    if(d.errorStats)errorStats=Object.assign(errorStats,d.errorStats);
+    if(d.responseStats)responseStats=Object.assign(responseStats,d.responseStats);
+    if(d.rhythmScore)rhythmScore=Object.assign(rhythmScore,d.rhythmScore);
+    if(d.settings){
+      const st=d.settings;
+      if(typeof st.level==='number')level=st.level;
+      if(st.clef)clef=st.clef;
+      if(st.hintMode)hintMode=st.hintMode;
+      if(st.answerMode)answerMode=st.answerMode;
+      adaptiveMode=!!st.adaptiveMode;
+    }
+  }catch(e){}
+}
+function resetPersistentState(){try{localStorage.removeItem(STORAGE_KEY);}catch(e){}}
+
+function applySettingsToControls(){
+  const ls=document.getElementById('levelSel');if(ls)ls.value=level;
+  const cs=document.getElementById('clefSel');if(cs)cs.value=clef;
+  const hs=document.getElementById('hintModeSel');if(hs)hs.value=hintMode;
+  const cf=document.getElementById('chkForgiving');if(cf)cf.checked=(answerMode==='forgiving');
+  const ca=document.getElementById('chkAdaptive');if(ca)ca.checked=adaptiveMode;
 }
 
 function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
@@ -651,7 +1038,6 @@ function playNotes(midis){
     const ctx=getAudioCtx();
     midis.forEach(midi=>{
       const freq=midiToFreq(midi);
-      // Piano-like tone: fundamental + harmonics with fast attack, slow decay
       const harmonics=[1,2,3,4,5,6];
       const gains=[1,.5,.25,.15,.08,.04];
       const masterGain=ctx.createGain();
@@ -675,7 +1061,7 @@ function playNotes(midis){
   }catch(e){}
 }
 
-function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis])}
+function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis],performance.now())}
 
 // ——— Microphone ———
 async function toggleMic(){
@@ -699,7 +1085,7 @@ function startPitch(){
   pitchTimer=setInterval(()=>{
     analyser.getFloatTimeDomainData(buf);
     const freq=autoCorr(buf,audioCtx.sampleRate);
-    if(freq>50){const m=Math.round(12*Math.log2(freq/440)+69);if(m===last){hold++;if(hold===3)checkAnswer([m])}else{last=m;hold=0}}
+    if(freq>50){const m=Math.round(12*Math.log2(freq/440)+69);if(m===last){hold++;if(hold===3)checkAnswer([m],performance.now())}else{last=m;hold=0}}
   },80);
 }
 function autoCorr(buf,sr){
@@ -732,7 +1118,7 @@ async function toggleMidi(){
     midiAccess.inputs.forEach(inp=>{
       inp.onmidimessage=e=>{
         const[st,note,vel]=e.data;
-        if((st&0xF0)===0x90&&vel>0){heldMidi.add(note);clearTimeout(window._mt);window._mt=setTimeout(()=>checkAnswer([...heldMidi]),110)}
+        if((st&0xF0)===0x90&&vel>0){heldMidi.add(note);clearTimeout(window._mt);window._mt=setTimeout(()=>checkAnswer([...heldMidi],performance.now()),110)}
         else if((st&0xF0)===0x80||((st&0xF0)===0x90&&vel===0))heldMidi.delete(note);
       };
     });
@@ -809,10 +1195,17 @@ function playClick(accent,countIn,sub){
   }catch(e){}
 }
 
-// ——— Rhythm Mode ———
+// ——— Rhythm Mode (scored timing loop) ———
 function startRhythmMode(){
   const ms=60000/(+document.getElementById('rhythmBPM').value||80);
-  rhythmTimer=setInterval(()=>playClick(true,false),ms);
+  rhythmActive=true;beatAnswered=false;currentBeatStartedAt=performance.now();
+  rhythmTimer=setInterval(()=>{
+    // If the previous beat went by with no answer, count it as missed.
+    if(currentBeatStartedAt!=null && !beatAnswered){ rhythmScore.missed++; saveState(); updateUI(); }
+    currentBeatStartedAt=performance.now();
+    beatAnswered=false;
+    playClick(true,false);
+  },ms);
 }
 
 // ——— Builder ———
@@ -875,11 +1268,21 @@ function resetBuilder(){
 function resetStats(){
   if(!confirm('Reset all stats?'))return;
   score={correct:0,total:0,streak:0,bestStreak:0,xp:0};
-  levelScores=[0,0,0,0,0,0];levelAttempts=[0,0,0,0,0,0];missedNotes={};updateUI();
+  levelScores=[0,0,0,0,0,0];levelAttempts=[0,0,0,0,0,0];missedNotes={};
+  errorStats={missingNotes:{},extraNotes:{},octaveErrors:{},intervalErrors:{}};
+  responseStats={totalMs:0,count:0,fastestCorrectMs:null,
+    byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
+    recent:[]};
+  rhythmScore={onTime:0,early:0,late:0,missed:0};
+  resetPersistentState();updateUI();saveState();
 }
 
 window.addEventListener('load',()=>{
-  renderBeatDots();initBuilder();buildUpdate();nextExercise();
+  loadState();
+  applySettingsToControls();
+  renderBeatDots();initBuilder();buildUpdate();
+  updateUI();
+  nextExercise();
   window.addEventListener('resize',()=>{drawStaff();drawPiano()});
 });
 </script>
