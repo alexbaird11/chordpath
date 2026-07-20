@@ -6,18 +6,40 @@ Single-file HTML piano sight reading trainer. All application logic lives in one
 - Web Audio API for mic pitch detection (autocorrelation) and tone playback
 - Web MIDI API for keyboard input
 - Canvas-based staff and piano rendering (HiDPI / device-pixel-ratio aware)
-- Progress persisted to `localStorage` (`chordpath.v3`)
+- Progress persisted to `localStorage` (`chordpath.v3`); imported pieces in `chordpath.pieces.v1`
 
 ## Features
 - 6 difficulty levels: single notes → intervals → triads → 7th chords → progressions → custom
 - Treble, bass, and grand staff modes
-- Sheet-music-first layout: the staff is the primary surface; the piano is a muted support strip
+- Sheet-music-first layout: wide (~1180px) reading surface with width-responsive staff sizing;
+  the staff is the primary surface and the piano is a muted support strip
+- Toggleable fingering annotations (1–5): RH above the staff, LH below, per engraving convention
 - Hint modes: full labels · landmark labels · interval hints · no hints
 - Diagnostic feedback with strict / forgiving answer modes (missed / extra / wrong-octave)
 - Response-time tracking (fluency), adaptive practice, and a scored rhythm timing loop
 - Metronome with time signature, subdivisions, count-in
 - Exercise builder: custom roots, chord types, inversions, rhythm mode
 - Stats: accuracy by level, weak/extra/octave notes, response time, rhythm timing, suggested next drill
+
+## Pieces: upload · analyze · train
+The **pieces** tab accepts uploaded scores and turns them into interactive practice:
+
+- **Formats**: `.musicxml` / `.xml` (DOMParser), `.mxl` (built-in ZIP reader +
+  `DecompressionStream`), `.mid` / `.midi` (built-in SMF parser), and experimental optical
+  recognition for `.png` / `.jpg` (staff-line + notehead detection) and `.pdf`
+  (rasterized via pdf.js from CDN, then OMR). Exact-data formats are always preferred;
+  OMR is an honest MVP for clean, printed, single-line scores and approximates rhythm.
+- **Analysis**: key signature is taken from the file when present, otherwise inferred with
+  the Krumhansl–Schmuckler profile method. Every note gets a recommended fingering —
+  chords via pedagogical cluster rules (1-3-5, 1-2-5, …), melodic lines via a
+  dynamic-programming model of hand position, thumb-under and cross-over technique.
+- **Native rendering**: parsed pieces render on the same canvas staff (measures, barlines,
+  key/time signatures, half/whole noteheads, cursor highlighting) and are played through
+  the existing mic / MIDI / simulate answer loop.
+- **Play-assessment → practice plan**: an assessment run records per-measure accuracy and
+  response time, flags difficult measures, and generates a plan — weak measures isolated
+  hands-separate at 60% tempo, recombined at 70%, then full-piece tempo ramping to 100%.
+  Each plan step launches practice pre-configured (measure range, hand, tempo).
 
 ## Tests
 Playwright drives the app through its global functions plus DOM assertions.
