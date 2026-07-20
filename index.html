@@ -26,7 +26,10 @@
     }
   }
   body { font-family: 'IBM Plex Mono', monospace; background: var(--bg3); color: var(--ink); font-size: 13px; min-height: 100vh; }
-  #app { max-width: 820px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+  /* Wider reading surface: modern web sheet-music apps (Soundslice, Flat, Flowkey) run the
+     score nearly edge-to-edge and let the staff breathe. 1180px keeps ~5 measures per line
+     readable on a laptop while phones still get the fluid 100% width. */
+  #app { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
   .header { display: flex; align-items: baseline; gap: 12px; }
   .title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 500; }
   .subtitle { font-size: 12px; color: var(--ink2); }
@@ -97,6 +100,24 @@
   .metric-pill .n { font-size: 17px; font-weight: 500; line-height: 1.15; color: var(--ink); }
   .metric-pill .l { font-size: 10px; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+  /* ——— Piece practice banner (shown inside the staff card while playing an uploaded piece) ——— */
+  .piece-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .piece-banner .t { font-size: 12px; color: var(--ink); }
+  .piece-banner .m { font-size: 11px; color: var(--ink2); }
+
+  /* ——— Pieces tab: upload & library ——— */
+  .upload-drop { border: 1.5px dashed var(--border2); border-radius: var(--radius-lg); padding: 26px 16px; text-align: center; cursor: pointer; color: var(--ink2); transition: border-color .15s, background .15s; }
+  .upload-drop:hover, .upload-drop.drag { border-color: var(--green); background: var(--green-light); color: var(--ink); }
+  .upload-drop .big { font-size: 13px; color: var(--ink); margin-bottom: 4px; }
+  .piece-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg2); border-radius: var(--radius); padding: 9px 12px; }
+  .piece-row.sel { outline: 1.5px solid var(--green); }
+  .piece-row .t { font-size: 12px; }
+  .piece-row .meta { font-size: 11px; color: var(--ink2); }
+  .plan-step { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 8px 12px; }
+  .plan-step .d { font-size: 12px; }
+  .plan-step .why { font-size: 11px; color: var(--ink2); }
+  .plan-step.done { opacity: .55; }
 </style>
 </head>
 <body>
@@ -108,10 +129,11 @@
 
   <div class="card">
     <div class="tab-bar">
-      <button class="tab active" onclick="showTab('practice')">practice</button>
-      <button class="tab" onclick="showTab('metronome')">metronome</button>
-      <button class="tab" onclick="showTab('builder')">exercise builder</button>
-      <button class="tab" onclick="showTab('stats')">stats</button>
+      <button class="tab active" data-tab="practice" onclick="showTab('practice')">practice</button>
+      <button class="tab" data-tab="pieces" onclick="showTab('pieces')">pieces</button>
+      <button class="tab" data-tab="metronome" onclick="showTab('metronome')">metronome</button>
+      <button class="tab" data-tab="builder" onclick="showTab('builder')">exercise builder</button>
+      <button class="tab" data-tab="stats" onclick="showTab('stats')">stats</button>
     </div>
 
     <!-- PRACTICE TAB -->
@@ -140,6 +162,7 @@
           </select>
           <label class="chk compact"><input type="checkbox" id="chkForgiving" onchange="setAnswerMode(this.checked)"> forgiving</label>
           <label class="chk compact"><input type="checkbox" id="chkAdaptive" onchange="setAdaptiveMode(this.checked)"> adaptive</label>
+          <button id="fingeringBtn" onclick="toggleFingering()" aria-pressed="true" title="show recommended fingerings (1–5)">fingering</button>
         </div>
         <div class="row">
           <span id="statusPill" class="pill">ready</span>
@@ -149,6 +172,13 @@
 
       <!-- 2. Large sheet-music card -->
       <div class="staff-card">
+        <div id="pieceBanner" class="piece-banner" style="display:none">
+          <span class="t" id="pieceBannerTitle"></span>
+          <span class="row" style="gap:8px">
+            <span class="m" id="pieceBannerPos"></span>
+            <button onclick="exitPiecePractice()">exit piece</button>
+          </span>
+        </div>
         <canvas id="staffCanvas" height="190"></canvas>
         <div id="notationHint" class="notation-hint"></div>
       </div>
@@ -183,6 +213,41 @@
       </div>
       <div class="progress-bar" style="margin-top:12px"><div class="progress-fill" id="levelProgress" style="width:0%"></div></div>
       <div class="label" style="margin-top:5px" id="levelProgressLabel">level 1 · 0/10 to advance</div>
+    </div>
+
+    <!-- PIECES TAB (upload · analyze · train) -->
+    <div id="tab-pieces" class="tab-pane">
+      <div class="sect">import sheet music</div>
+      <div class="upload-drop" id="uploadDrop"
+           onclick="document.getElementById('pieceFileInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="event.preventDefault();this.classList.remove('drag');handlePieceFiles(event.dataTransfer.files)">
+        <div class="big">drop a score here or click to browse</div>
+        <div class="label">.musicxml · .xml · .mxl · .mid · .midi — parsed exactly · .png · .jpg · .pdf — experimental optical recognition</div>
+      </div>
+      <input type="file" id="pieceFileInput" style="display:none" multiple
+             accept=".musicxml,.xml,.mxl,.mid,.midi,.png,.jpg,.jpeg,.pdf"
+             onchange="handlePieceFiles(this.files);this.value=''">
+      <div id="importStatus" class="label" style="margin-top:8px;min-height:16px"></div>
+
+      <div class="sect">library</div>
+      <div id="pieceList" class="col"></div>
+
+      <div id="pieceDetail" style="display:none;margin-top:14px">
+        <div class="sect" id="pieceDetailTitle">piece</div>
+        <div class="row" id="pieceDetailMeta" style="margin-bottom:10px"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          <button class="accent" onclick="startPiecePracticeFromDetail('both')">practice piece →</button>
+          <button onclick="startPiecePracticeFromDetail('R')">right hand only</button>
+          <button id="pieceLeftHandBtn" onclick="startPiecePracticeFromDetail('L')">left hand only</button>
+          <button onclick="startAssessment()">play-assessment</button>
+          <button class="danger" onclick="deleteSelectedPiece()">remove</button>
+        </div>
+        <div class="label" id="pieceAssessSummary" style="margin-bottom:10px"></div>
+        <div class="sect" id="planHeading" style="display:none">personalized practice plan</div>
+        <div id="planSteps" class="col"></div>
+      </div>
     </div>
 
     <!-- METRONOME TAB -->
@@ -367,6 +432,18 @@ let _mCtx=null;
 let hintMode='full';      // 'full' | 'landmarks' | 'intervals' | 'none'
 let answerMode='strict';  // 'strict' | 'forgiving'
 let adaptiveMode=false;
+let showFingering=true;   // Part 1: toggleable 1–5 fingering annotations
+
+// ——— Phase 4: uploaded-piece practice state ———
+const PIECES_KEY='chordpath.pieces.v1';
+let pieces=[];                 // imported piece library
+let selectedPieceId=null;
+let practiceMode='drill';      // 'drill' | 'piece'
+let currentPiece=null;         // piece being practiced
+let pieceQueue=[];             // flattened playable steps for the active practice run
+let pieceCursor=0;
+let pieceOpts={measures:null,hand:'both',tempoPct:100,assess:false};
+let assessRun=null;            // {perMeasure:{n:{attempts,correct,totalMs}}}
 
 let exerciseStartedAt=null;
 let exerciseScored=false;  // ensure response time is recorded once per exercise
@@ -384,8 +461,8 @@ function nn(m){return NOTE_NAMES[m%12]+(Math.floor(m/12)-1)}
 function midiToStaffPos(m){return Math.floor(m/12-1)*7+DIATONIC[m%12]}
 
 function showTab(t){
-  document.querySelectorAll('.tab').forEach((b,i)=>{
-    b.classList.toggle('active',['practice','metronome','builder','stats'][i]===t);
+  document.querySelectorAll('.tab').forEach(b=>{
+    b.classList.toggle('active',b.dataset.tab===t);
   });
   document.querySelectorAll('.tab-pane').forEach(p=>{
     p.classList.toggle('active',p.id==='tab-'+t);
@@ -531,6 +608,12 @@ function genExercise(){
 }
 
 function nextExercise(){
+  if(practiceMode==='piece'){
+    // "next →" in piece mode skips the current step (an assessment counts it as missed)
+    if(assessRun)recordAssess(false,null);
+    advancePiece();
+    return;
+  }
   if(rhythmTimer){clearInterval(rhythmTimer);rhythmTimer=null}
   rhythmActive=false;currentBeatStartedAt=null;
   const tp=document.getElementById('timingPill');if(tp)tp.style.display='none';
@@ -589,8 +672,10 @@ function getColors(){
   return{
     ink:s.getPropertyValue('--ink').trim()||'#111',
     ink2:s.getPropertyValue('--ink2').trim()||'#666',
+    ink3:s.getPropertyValue('--ink3').trim()||'#999',
     bg:s.getPropertyValue('--bg').trim()||'#fff',
-    green:'#1D9E75',greenLight:'#E1F5EE'
+    green:'#1D9E75',
+    greenLight:s.getPropertyValue('--green-light').trim()||'#E1F5EE'
   };
 }
 
@@ -654,19 +739,43 @@ function drawNoteLabels(ctx,notes,cx,lg,color,bg){
   ctx.textBaseline='alphabetic';
 }
 
+// Width-responsive staff metrics (Part 1). The line gap grows with the container so the
+// staff fills the wider layout; on narrow screens it settles back to the compact size.
+function staffMetrics(W,isGrand){
+  if(isGrand){
+    const lg=Math.max(12,Math.min(19,Math.round(W/52)));
+    const tTop=Math.round(lg*4.4);
+    const bTop=tTop+Math.round(lg*10);
+    return{lg,tTop,bTop,H:bTop+lg*4+Math.round(lg*4.2)};
+  }
+  const lg=Math.max(14,Math.min(23,Math.round(W/44)));
+  const tTop=Math.round(lg*4.6);
+  return{lg,tTop,H:tTop+lg*4+Math.round(lg*4.8)};
+}
+
+// Evenly distribute progression chords across the full staff width instead of the old
+// fixed 80px pitch, so wide screens get real horizontal breathing room.
+function progressionXs(W,n,lg){
+  const startX=60+lg*4, endX=W-lg*3;
+  if(n<=1)return[Math.round((startX+endX)/2)];
+  const step=(endX-startX)/(n-1);
+  return Array.from({length:n},(_,i)=>Math.round(startX+i*step));
+}
+
 function drawStaff(){
+  if(practiceMode==='piece'&&currentPiece){drawPieceStaff();return;}
   const canvas=document.getElementById('staffCanvas');
   const isGrand=currentEx&&currentEx.clef==='grand';
   // Let CSS reflow the width (canvas is width:100%) before measuring so resize keeps working.
   canvas.style.width='';
   const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
-  const H=isGrand?300:190;
-  const ctx=setupHiDPICanvas(canvas,W,H);
-  ctx.clearRect(0,0,W,H);
+  const m=staffMetrics(W,isGrand);
+  const ctx=setupHiDPICanvas(canvas,W,m.H);
+  ctx.clearRect(0,0,W,m.H);
   const {ink,ink2,green,bg}=getColors();
 
   if(isGrand){
-    const tTop=54,bTop=186,lg=13;
+    const {tTop,bTop,lg}=m;
     drawLines(ctx,W,tTop,lg,ink);
     drawLines(ctx,W,bTop,lg,ink);
     ctx.fillStyle=ink;
@@ -675,10 +784,11 @@ function drawStaff(){
     ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(60,tTop);ctx.lineTo(60,bTop+4*lg);ctx.stroke();
     if(currentEx){
       if(currentEx.type==='progression'){
+        const xs=progressionXs(W,currentEx.chords.length,lg);
         currentEx.chords.forEach((ch,ci)=>{
-          const x=90+ci*80;const isActive=ci===currentEx.chordIdx;
-          CHORD_TYPES[ch.t].map(i=>ch.r+i).forEach(m=>{
-            drawNote(ctx,m,x,m<60?bTop:tTop,lg,ink,isActive?green:'#9FE1CB',isActive,m<60);
+          const x=xs[ci];const isActive=ci===currentEx.chordIdx;
+          CHORD_TYPES[ch.t].map(i=>ch.r+i).forEach(mm=>{
+            drawNote(ctx,mm,x,mm<60?bTop:tTop,lg,ink,isActive?green:'#9FE1CB',isActive,mm<60);
           });
         });
       } else {
@@ -691,10 +801,11 @@ function drawStaff(){
           if(shouldShowNoteLabel(midi,{clef:'grand'}))labelNotes.push({midi,y:noteY(midi,top,lg,isBass)});
         });
         if(labelNotes.length)drawNoteLabels(ctx,labelNotes,cx,lg,ink2,bg);
+        drawDrillFingerings(ctx,layout,cx,{tTop,bTop},lg,bg);
       }
     }
   } else {
-    const tTop=64,lg=14;
+    const {tTop,lg}=m;
     const isBass=currentEx&&currentEx.clef==='bass';
     drawLines(ctx,W,tTop,lg,ink);
     ctx.fillStyle=ink;ctx.textAlign='left';
@@ -702,10 +813,11 @@ function drawStaff(){
     ctx.fillText(isBass?'𝄢':'𝄞',10,isBass?tTop+lg*4.8:tTop+lg*5.2);
     if(currentEx){
       if(currentEx.type==='progression'){
+        const xs=progressionXs(W,currentEx.chords.length,lg);
         currentEx.chords.forEach((ch,ci)=>{
-          const x=90+ci*80;const isActive=ci===currentEx.chordIdx;
-          CHORD_TYPES[ch.t].map(i=>ch.r+i).forEach(m=>{
-            drawNote(ctx,m,x,tTop,lg,ink,isActive?green:'#9FE1CB',isActive,isBass);
+          const x=xs[ci];const isActive=ci===currentEx.chordIdx;
+          CHORD_TYPES[ch.t].map(mm=>ch.r+mm).forEach(mm=>{
+            drawNote(ctx,mm,x,tTop,lg,ink,isActive?green:'#9FE1CB',isActive,isBass);
           });
         });
       } else {
@@ -717,9 +829,67 @@ function drawStaff(){
           if(shouldShowNoteLabel(midi,{clef:currentEx.clef}))labelNotes.push({midi,y:noteY(midi,tTop,lg,isBass)});
         });
         if(labelNotes.length)drawNoteLabels(ctx,labelNotes,cx,lg,ink2,bg);
+        drawDrillFingerings(ctx,layout,cx,isBass?{bTop:tTop}:{tTop},lg,bg);
       }
     }
   }
+}
+
+// ——— Fingering annotations (Part 1) ———
+// Engraving convention: right-hand fingerings sit stacked above the staff, left-hand
+// fingerings below, numbers ordered to match the notes (highest note = top number).
+function drawFingeringStack(ctx,items,x,lg,above,edgeY,color,bg){
+  if(!items.length)return;
+  const fs=Math.max(10,Math.round(lg*.82));
+  ctx.font=`500 ${fs}px IBM Plex Mono`;ctx.textAlign='center';ctx.textBaseline='middle';
+  const gap=fs+3;
+  const sorted=items.slice().sort((a,b)=>a.midi-b.midi); // ascending pitch
+  const highestY=Math.min(...sorted.map(s=>s.y));
+  const lowestY=Math.max(...sorted.map(s=>s.y));
+  sorted.forEach((it,i)=>{
+    // stack in pitch order: top note's finger on top, bottom note's on the bottom.
+    // `above`: base sits just above the cluster, higher notes stack upward.
+    // `below`: base sits just below the cluster, the highest note stays nearest the staff.
+    const yy=above
+      ? Math.min(edgeY,highestY-lg*1.2)-i*gap
+      : Math.max(edgeY,lowestY+lg*1.2)+(sorted.length-1-i)*gap;
+    const w=ctx.measureText(String(it.f)).width;
+    ctx.fillStyle=bg;ctx.fillRect(x-w/2-2,yy-fs/2-1,w+4,fs+2);
+    ctx.fillStyle=color;
+    ctx.fillText(String(it.f),x,yy);
+  });
+  ctx.textBaseline='alphabetic';
+}
+
+// Drill-mode fingering: annotate the current cluster. Grand staff splits hands at middle C.
+function drawDrillFingerings(ctx,layout,cx,tops,lg,bg){
+  if(!showFingering||!currentEx)return;
+  const {ink2}=getColors();
+  const groups=[];
+  if(tops.tTop!=null&&tops.bTop!=null){ // grand
+    const rh=layout.filter(n=>n.midi>=60), lh=layout.filter(n=>n.midi<60);
+    if(rh.length)groups.push({notes:rh,hand:'R',top:tops.tTop});
+    if(lh.length)groups.push({notes:lh,hand:'L',top:tops.bTop});
+  } else if(tops.bTop!=null){ // bass staff alone → left hand
+    groups.push({notes:layout,hand:'L',top:tops.bTop});
+  } else {
+    groups.push({notes:layout,hand:'R',top:tops.tTop});
+  }
+  groups.forEach(g=>{
+    const midis=g.notes.map(n=>n.midi).sort((a,b)=>a-b);
+    const fingers=fingeringForCluster(midis,g.hand);
+    const items=midis.map((mm,i)=>({midi:mm,f:fingers[i],y:noteY(mm,g.top,lg,g.hand==='L')}));
+    const above=g.hand==='R';
+    const edgeY=above?g.top-lg*1.1:g.top+4*lg+lg*1.1;
+    drawFingeringStack(ctx,items,cx,lg,above,edgeY,ink2,bg);
+  });
+}
+
+function toggleFingering(){
+  showFingering=!showFingering;
+  const b=document.getElementById('fingeringBtn');
+  if(b){b.classList.toggle('on',showFingering);b.setAttribute('aria-pressed',String(showFingering));}
+  drawStaff();saveState();
 }
 
 function drawLines(ctx,W,top,lg,ink){
@@ -728,31 +898,40 @@ function drawLines(ctx,W,top,lg,ink){
 }
 
 function noteY(midi,top,lg,isBass){
-  const refMidi=isBass?48:64;
+  // Bottom staff line: E4 in treble, G2 in bass (standard clef anchoring).
+  const refMidi=isBass?43:64;
   const steps=midiToStaffPos(midi)-midiToStaffPos(refMidi);
   return top+4*lg-steps*(lg/2);
 }
 
-function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass){
+function drawNote(ctx,midi,x,top,lg,ink,color,hi,isBass,opts){
+  opts=opts||{};
   const y=noteY(midi,top,lg,isBass);
   const r=lg*.55;
   const sharpPcs=[1,3,6,8,10];
-  const isSharp=sharpPcs.includes(midi%12);
+  const isSharp=sharpPcs.includes(midi%12)&&!opts.noAccidental;
   ctx.strokeStyle=ink;ctx.lineWidth=1;
   const btm=top+4*lg;
   if(y>btm+2){let ly=btm+lg;while(ly<=y+2){ctx.beginPath();ctx.moveTo(x-r*1.6,ly);ctx.lineTo(x+r*1.6,ly);ctx.stroke();ly+=lg}}
   if(y<top-2){let ly=top-lg;while(ly>=y-2){ctx.beginPath();ctx.moveTo(x-r*1.6,ly);ctx.lineTo(x+r*1.6,ly);ctx.stroke();ly-=lg}}
-  if(midi===60){ctx.beginPath();ctx.moveTo(x-r*1.6,y);ctx.lineTo(x+r*1.6,y);ctx.stroke()}
-  ctx.fillStyle=hi?color:ink;
-  ctx.beginPath();ctx.ellipse(x,y,r,r*.78,-.3,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle=hi?color:ink;ctx.lineWidth=1.4;
-  ctx.beginPath();
-  if(y>top+2*lg){ctx.moveTo(x+r,y);ctx.lineTo(x+r,y-lg*3.5)}
-  else{ctx.moveTo(x-r,y);ctx.lineTo(x-r,y+lg*3.5)}
-  ctx.stroke();
+  if(midi===60&&!isBass){ctx.beginPath();ctx.moveTo(x-r*1.6,y);ctx.lineTo(x+r*1.6,y);ctx.stroke()}
+  const c=hi?color:ink;
+  ctx.beginPath();ctx.ellipse(x,y,r,r*.78,-.3,0,Math.PI*2);
+  if(opts.open){ // half / whole notes render as open noteheads
+    ctx.strokeStyle=c;ctx.lineWidth=Math.max(1.6,lg*.14);ctx.stroke();
+  } else {
+    ctx.fillStyle=c;ctx.fill();
+  }
+  if(!opts.noStem){
+    ctx.strokeStyle=c;ctx.lineWidth=1.4;
+    ctx.beginPath();
+    if(y>top+2*lg){ctx.moveTo(x+r,y);ctx.lineTo(x+r,y-lg*3.5)}
+    else{ctx.moveTo(x-r,y);ctx.lineTo(x-r,y+lg*3.5)}
+    ctx.stroke();
+  }
   // Accidental sits in the notation layer, to the left of the head (never a learning label).
   if(isSharp){
-    ctx.fillStyle=hi?color:ink;
+    ctx.fillStyle=c;
     ctx.font=`bold ${Math.round(lg*1.5)}px serif`;
     ctx.textAlign='right';
     ctx.textBaseline='middle';
@@ -813,6 +992,1017 @@ function drawPiano(){
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Fingering engine (Part 1 + Part 2)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Inverse of midiToStaffPos: diatonic staff position → the white-key midi on it.
+function staffPosToMidi(pos){
+  const oct=Math.floor(pos/7);
+  return (oct+1)*12+[0,2,4,5,7,9,11][pos-oct*7];
+}
+
+// Chord / interval fingering by diatonic span, following common piano pedagogy:
+// RH root-position triad 1-3-5, first inversion 1-2-5, sevenths 1-2-3-5 / 1-2-4-5,
+// intervals by size. The left hand is the mirror image of the right.
+// Returns fingers aligned with the midis sorted ascending.
+function fingeringForCluster(midis,hand){
+  const s=[...midis].sort((a,b)=>a-b);
+  const n=s.length;
+  const gaps=[];
+  for(let i=1;i<n;i++)gaps.push(midiToStaffPos(s[i])-midiToStaffPos(s[i-1]));
+  if(hand==='L'){
+    // mirror of the RH rules: pinky anchors the bottom, thumb the top
+    if(n===1)return [Math.max(1,5-DIATONIC[s[0]%12])]; // C-position: C=5 … G=1
+    if(n===2){
+      const d=gaps[0];
+      return [5, d<=1?4 : d===2?3 : d===3?2 : 1];
+    }
+    if(n===3){
+      // wider gap on the bottom (e.g. second inversion G-C-E) pulls finger 2 in: 5-2-1
+      return gaps[0]>gaps[1]?[5,2,1]:[5,3,1];
+    }
+    if(n===4){
+      return gaps[0]>=Math.max(gaps[1],gaps[2])?[5,3,2,1]:[5,4,2,1];
+    }
+    return s.map((_,i)=>Math.max(1,5-i));
+  }
+  if(n===1){
+    // isolated note: C-position five-finger default (C=1 … G=5, A/B fall to 5)
+    return [Math.min(5,DIATONIC[s[0]%12]+1)];
+  }
+  if(n===2){
+    const d=gaps[0];
+    return [1, d<=1?2 : d===2?3 : d===3?4 : 5];
+  }
+  if(n===3){
+    // wider gap on top (e.g. first inversion E-G-C) pulls finger 2 in: 1-2-5
+    return gaps[1]>gaps[0]?[1,2,5]:[1,3,5];
+  }
+  if(n===4){
+    return gaps[2]>=Math.max(gaps[0],gaps[1])?[1,2,3,5]:[1,2,4,5];
+  }
+  return s.map((_,i)=>Math.min(5,i+1));
+}
+
+// Transition cost for melodic fingering. p = previous finger, f = next finger,
+// d = signed semitone motion (already mirrored into RH orientation for the LH).
+function fingerStepCost(p,f,d){
+  if(d===0)return f===p?0:1.2;
+  const dd=Math.abs(d);
+  if(f===p)return 2.5+dd*.3;                              // same-finger slide
+  if(d>0){
+    if(f>p)return Math.abs(dd-(f-p)*1.8)*.5;              // natural ascending spread
+    if(f===1)return .5+Math.abs(dd-1)*.35+(dd>4?2:0)+(p===5?1.2:0); // thumb under (best after 3/4)
+    return 5+dd*.2;                                       // awkward crossing
+  }
+  if(f<p)return Math.abs(dd-(p-f)*1.8)*.5;                // natural descending spread
+  if(p===1)return .5+Math.abs(dd-1)*.35+(dd>4?2:0)+(f===5?1.2:0); // cross over thumb (3/4 best)
+  return 5+dd*.2;
+}
+
+// Dynamic-programming melodic fingering: pick fingers 1–5 minimizing hand strain,
+// modelling standard thumb-under / cross-over technique for runs and leaps.
+function inferMelodicFingering(seq,hand){
+  const N=seq.length;
+  if(!N)return[];
+  const sgn=hand==='L'?-1:1;
+  const INF=1e9;
+  const dp=Array.from({length:N},()=>new Array(6).fill(INF));
+  const back=Array.from({length:N},()=>new Array(6).fill(1));
+  for(let f=1;f<=5;f++)dp[0][f]=0; // neutral start — transitions decide the opening finger
+  for(let i=1;i<N;i++){
+    const d=(seq[i]-seq[i-1])*sgn;
+    for(let f=1;f<=5;f++){
+      for(let p=1;p<=5;p++){
+        if(dp[i-1][p]>=INF)continue;
+        const c=dp[i-1][p]+fingerStepCost(p,f,d);
+        if(c<dp[i][f]){dp[i][f]=c;back[i][f]=p;}
+      }
+    }
+  }
+  let best=1;
+  for(let f=2;f<=5;f++)if(dp[N-1][f]<dp[N-1][best])best=f;
+  const out=new Array(N);
+  out[N-1]=best;
+  for(let i=N-1;i>0;i--)out[i-1]=back[i][out[i]];
+  return out;
+}
+
+// Annotate every event of a parsed piece with recommended fingerings.
+// Chords use cluster rules; consecutive single notes form melodic runs fingered by DP.
+function annotateFingerings(piece){
+  ['R','L'].forEach(hand=>{
+    const evs=[];
+    piece.measures.forEach(m=>m.events.forEach(ev=>{if(ev.hand===hand)evs.push(ev)}));
+    let run=[];
+    const flush=()=>{
+      if(!run.length)return;
+      const fingers=inferMelodicFingering(run.map(e=>e.midis[0]),hand);
+      run.forEach((e,i)=>e.fingerings=[fingers[i]]);
+      run=[];
+    };
+    evs.forEach(ev=>{
+      if(ev.midis.length===1)run.push(ev);
+      else{flush();ev.fingerings=fingeringForCluster([...ev.midis].sort((a,b)=>a-b),hand);}
+    });
+    flush();
+  });
+  return piece;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Key signature detection (Krumhansl–Schmuckler profiles)
+// ═══════════════════════════════════════════════════════════════════════════
+const KS_MAJOR=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+const KS_MINOR=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+const FLAT_NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+function keyFromFifths(fifths,mode){
+  mode=mode==='minor'?'minor':'major';
+  const majorPc=((fifths*7)%12+12)%12;
+  const tonic=mode==='minor'?(majorPc+9)%12:majorPc;
+  return {fifths,mode,tonic,name:(fifths<0?FLAT_NAMES:NOTE_NAMES)[tonic]+' '+mode};
+}
+
+function detectKey(midis){
+  const hist=new Array(12).fill(0);
+  midis.forEach(m=>hist[((m%12)+12)%12]++);
+  const corr=(profile,rot)=>{
+    let sx=0,sy=0,sxy=0,sxx=0,syy=0;
+    for(let i=0;i<12;i++){
+      const x=hist[(i+rot)%12],y=profile[i];
+      sx+=x;sy+=y;sxy+=x*y;sxx+=x*x;syy+=y*y;
+    }
+    const num=12*sxy-sx*sy,den=Math.sqrt((12*sxx-sx*sx)*(12*syy-sy*sy));
+    return den?num/den:0;
+  };
+  let best={score:-2,pc:0,mode:'major'};
+  for(let pc=0;pc<12;pc++){
+    const cM=corr(KS_MAJOR,pc),cm=corr(KS_MINOR,pc);
+    if(cM>best.score)best={score:cM,pc,mode:'major'};
+    if(cm>best.score)best={score:cm,pc,mode:'minor'};
+  }
+  const majorPc=best.mode==='major'?best.pc:(best.pc+3)%12;
+  let fifths=(majorPc*7)%12;      // 7 is its own inverse mod 12
+  if(fifths>6)fifths-=12;
+  return Object.assign(keyFromFifths(fifths,best.mode),{detected:true});
+}
+
+function keyScalePcs(fifths){
+  const tonic=((fifths*7)%12+12)%12;
+  return [0,2,4,5,7,9,11].map(o=>(tonic+o)%12);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Parsers: MusicXML · MXL · MIDI · image/PDF OMR
+// Piece model: {title, source, keySig, timeSig, tempo, measures:[{number, events:
+//   [{onset (beats), duration (beats), midis[], hand:'R'|'L', fingerings[]}]}]}
+// ═══════════════════════════════════════════════════════════════════════════
+const STEP_PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+
+function parseMusicXML(xmlText,fileName){
+  const doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  if(doc.querySelector('parsererror'))throw new Error('invalid MusicXML');
+  const root=doc.querySelector('score-partwise');
+  if(!root)throw new Error('only score-partwise MusicXML is supported');
+  const titleEl=doc.querySelector('work work-title')||doc.querySelector('movement-title');
+  const parts=[...root.children].filter(el=>el.tagName==='part');
+  if(!parts.length)throw new Error('no parts found');
+  let keySig=null,timeSig=null,tempo=null;
+  const measureMap=[];
+  parts.forEach((part,pi)=>{
+    let div=1;
+    [...part.children].filter(el=>el.tagName==='measure').forEach((meas,mi)=>{
+      if(!measureMap[mi])measureMap[mi]={number:mi+1,events:[]};
+      let onset=0,lastOnset=0;
+      [...meas.children].forEach(el=>{
+        const tag=el.tagName;
+        if(tag==='attributes'){
+          const d=el.querySelector('divisions');if(d)div=+d.textContent||div;
+          const k=el.querySelector('key fifths');
+          if(k&&!keySig)keySig={fifths:+k.textContent||0,mode:((el.querySelector('key mode')||{}).textContent||'major').trim()};
+          const tb=el.querySelector('time beats'),tt=el.querySelector('time beat-type');
+          if(tb&&tt&&!timeSig)timeSig={beats:+tb.textContent||4,beatType:+tt.textContent||4};
+        } else if(tag==='direction'){
+          const s=el.querySelector('sound[tempo]');
+          if(s&&!tempo)tempo=Math.round(+s.getAttribute('tempo'))||null;
+        } else if(tag==='sound'){
+          if(el.getAttribute('tempo')&&!tempo)tempo=Math.round(+el.getAttribute('tempo'))||null;
+        } else if(tag==='backup'){
+          onset-=(+((el.querySelector('duration')||{}).textContent||0))/div;
+        } else if(tag==='forward'){
+          onset+=(+((el.querySelector('duration')||{}).textContent||0))/div;
+        } else if(tag==='note'){
+          const dur=(+((el.querySelector('duration')||{}).textContent||0))/div;
+          const isChord=!!el.querySelector('chord');
+          const isRest=!!el.querySelector('rest');
+          const grace=!!el.querySelector('grace');
+          const at=isChord?lastOnset:onset;
+          if(!isChord)lastOnset=onset;
+          if(!grace&&!isChord)onset+=dur;
+          if(isRest||grace)return;
+          const pitch=el.querySelector('pitch');if(!pitch)return;
+          // a tied continuation is not a new attack
+          const tieStop=!!el.querySelector('tie[type="stop"]');
+          const tieStart=!!el.querySelector('tie[type="start"]');
+          if(tieStop&&!tieStart)return;
+          const step=((pitch.querySelector('step')||{}).textContent||'C').trim();
+          const alter=+((pitch.querySelector('alter')||{}).textContent||0);
+          const oct=+((pitch.querySelector('octave')||{}).textContent||4);
+          const midi=(oct+1)*12+(STEP_PC[step]||0)+alter;
+          const staffEl=el.querySelector('staff');
+          const staffN=staffEl?+staffEl.textContent:null;
+          const hand=staffN!=null?(staffN>=2?'L':'R'):(parts.length>1?(pi===0?'R':'L'):(midi<60?'L':'R'));
+          const evs=measureMap[mi].events;
+          let ev=evs.find(e=>e.hand===hand&&Math.abs(e.onset-at)<1e-6);
+          if(!ev){ev={onset:at,duration:dur||1,midis:[],hand,fingerings:null};evs.push(ev);}
+          if(!ev.midis.includes(midi))ev.midis.push(midi);
+          ev.duration=Math.max(ev.duration,dur||1);
+        }
+      });
+    });
+  });
+  measureMap.forEach(m=>{
+    m.events.sort((a,b)=>a.onset-b.onset||(a.hand===b.hand?0:a.hand==='R'?-1:1));
+    m.events.forEach(e=>e.midis.sort((x,y)=>x-y));
+  });
+  return {
+    title:titleEl?titleEl.textContent.trim():(fileName||'').replace(/\.(musicxml|xml)$/i,''),
+    source:'musicxml',
+    keySig:keySig?Object.assign(keyFromFifths(keySig.fifths,keySig.mode),{detected:false}):null,
+    timeSig:timeSig||{beats:4,beatType:4},
+    tempo:tempo||90,
+    measures:measureMap
+  };
+}
+
+// Minimal ZIP reader for .mxl (compressed MusicXML): central directory + local headers,
+// stored entries as-is, deflated entries via DecompressionStream('deflate-raw').
+async function extractMxlXml(buf){
+  const u=new Uint8Array(buf);
+  const rd16=o=>u[o]|(u[o+1]<<8);
+  const rd32=o=>(u[o]|(u[o+1]<<8)|(u[o+2]<<16)|(u[o+3]<<24))>>>0;
+  let eocd=-1;
+  for(let i=u.length-22;i>=Math.max(0,u.length-22-65557);i--){
+    if(u[i]===0x50&&u[i+1]===0x4b&&u[i+2]===0x05&&u[i+3]===0x06){eocd=i;break;}
+  }
+  if(eocd<0)throw new Error('not a valid .mxl (zip) file');
+  const count=rd16(eocd+10);
+  let off=rd32(eocd+16);
+  const entries=[];
+  for(let i=0;i<count;i++){
+    if(rd32(off)!==0x02014b50)break;
+    const method=rd16(off+10),csize=rd32(off+20),nlen=rd16(off+28),xlen=rd16(off+30),clen=rd16(off+32),lho=rd32(off+42);
+    entries.push({name:new TextDecoder().decode(u.subarray(off+46,off+46+nlen)),method,csize,lho});
+    off+=46+nlen+xlen+clen;
+  }
+  const readEntry=async ent=>{
+    const nlen=rd16(ent.lho+26),xlen=rd16(ent.lho+28);
+    const data=u.subarray(ent.lho+30+nlen+xlen,ent.lho+30+nlen+xlen+ent.csize);
+    if(ent.method===0)return new TextDecoder().decode(data);
+    if(ent.method===8){
+      const ds=new DecompressionStream('deflate-raw');
+      return await new Response(new Blob([data]).stream().pipeThrough(ds)).text();
+    }
+    throw new Error('unsupported zip compression method '+ent.method);
+  };
+  const container=entries.find(en=>en.name==='META-INF/container.xml');
+  if(container){
+    const cd=new DOMParser().parseFromString(await readEntry(container),'application/xml');
+    const rf=cd.querySelector('rootfile');
+    const path=rf&&rf.getAttribute('full-path');
+    const ent=path&&entries.find(en=>en.name===path);
+    if(ent)return readEntry(ent);
+  }
+  const xmlEnt=entries.find(en=>/\.(musicxml|xml)$/i.test(en.name)&&!en.name.startsWith('META-INF'));
+  if(!xmlEnt)throw new Error('no MusicXML found inside .mxl');
+  return readEntry(xmlEnt);
+}
+
+// Standard MIDI File parser (format 0/1, PPQ timing). Notes are quantized to a
+// sixteenth grid; hands come from track pitch ranges (or middle C for one track).
+function parseMIDI(buf,fileName){
+  const u=new Uint8Array(buf);
+  let p=0;
+  const str=n=>{let s='';for(let i=0;i<n;i++)s+=String.fromCharCode(u[p++]);return s;};
+  const u32=()=>{const v=((u[p]<<24)|(u[p+1]<<16)|(u[p+2]<<8)|u[p+3])>>>0;p+=4;return v;};
+  const u16=()=>{const v=(u[p]<<8)|u[p+1];p+=2;return v;};
+  if(str(4)!=='MThd')throw new Error('not a MIDI file');
+  const hlen=u32();u16();const ntrk=u16();const division=u16();
+  p+=hlen-6;
+  if(division&0x8000)throw new Error('SMPTE-timed MIDI is not supported');
+  const notes=[];
+  let tempo=null,timeSig=null,keySigMeta=null;
+  for(let t=0;t<ntrk;t++){
+    if(str(4)!=='MTrk')throw new Error('bad MIDI track header');
+    const len=u32(),end=p+len;
+    let tick=0,run=0;
+    const active={};
+    const vlq=()=>{let v=0,b;do{b=u[p++];v=(v<<7)|(b&0x7f);}while(b&0x80);return v;};
+    const closeNote=(note,ch)=>{
+      const k=note+'_'+ch;
+      if(active[k]!==undefined){notes.push({midi:note,startTick:active[k],endTick:tick,track:t});delete active[k];}
+    };
+    while(p<end){
+      tick+=vlq();
+      let st=u[p];
+      if(st&0x80){p++;run=st;}else st=run;
+      if(st===0xff){
+        const meta=u[p++],ml=vlq();
+        if(meta===0x51&&ml===3&&!tempo)tempo=Math.round(60000000/(((u[p]<<16)|(u[p+1]<<8)|u[p+2])||500000));
+        else if(meta===0x58&&ml>=2&&!timeSig)timeSig={beats:u[p],beatType:Math.pow(2,u[p+1])};
+        else if(meta===0x59&&ml>=2&&!keySigMeta)keySigMeta={fifths:(u[p]<<24)>>24,mode:u[p+1]===1?'minor':'major'};
+        p+=ml;
+      } else if(st===0xf0||st===0xf7){
+        p+=vlq();
+      } else {
+        const type=st&0xf0,ch=st&0x0f;
+        if(type===0x90){
+          const note=u[p++],vel=u[p++];
+          if(vel>0)active[note+'_'+ch]=tick;else closeNote(note,ch);
+        } else if(type===0x80){
+          const note=u[p++];p++;closeNote(note,ch);
+        } else if(type===0xa0||type===0xb0||type===0xe0)p+=2;
+        else if(type===0xc0||type===0xd0)p+=1;
+        else throw new Error('unexpected MIDI event 0x'+st.toString(16));
+      }
+    }
+    Object.keys(active).forEach(k=>{
+      const[note]=k.split('_');
+      notes.push({midi:+note,startTick:active[k],endTick:tick,track:t});
+    });
+    p=end;
+  }
+  if(!notes.length)throw new Error('no notes found in MIDI file');
+  const ts=timeSig||{beats:4,beatType:4};
+  const mLen=ts.beats*4/ts.beatType;
+  const noteTracks=[...new Set(notes.map(n=>n.track))];
+  let handOf;
+  if(noteTracks.length>=2){
+    const avg={};
+    noteTracks.forEach(tr=>{
+      const ns=notes.filter(n=>n.track===tr);
+      avg[tr]=ns.reduce((s,n)=>s+n.midi,0)/ns.length;
+    });
+    const rhTrack=[...noteTracks].sort((a,b)=>avg[b]-avg[a])[0];
+    handOf=n=>n.track===rhTrack?'R':'L';
+  } else handOf=n=>n.midi<60?'L':'R';
+  const measures=[];
+  notes.forEach(n=>{
+    const beat=Math.round(n.startTick/division*4)/4;
+    const dur=Math.max(.25,Math.round((n.endTick-n.startTick)/division*4)/4);
+    const mi=Math.floor(beat/mLen+1e-9);
+    const onset=+(beat-mi*mLen).toFixed(4);
+    while(measures.length<=mi)measures.push({number:measures.length+1,events:[]});
+    const hand=handOf(n),evs=measures[mi].events;
+    let ev=evs.find(e=>e.hand===hand&&Math.abs(e.onset-onset)<1e-6);
+    if(!ev){ev={onset,duration:dur,midis:[],hand,fingerings:null};evs.push(ev);}
+    if(!ev.midis.includes(n.midi))ev.midis.push(n.midi);
+  });
+  measures.forEach(m=>{
+    m.events.sort((a,b)=>a.onset-b.onset);
+    m.events.forEach(e=>e.midis.sort((x,y)=>x-y));
+  });
+  return {
+    title:(fileName||'MIDI import').replace(/\.(mid|midi)$/i,''),
+    source:'midi',
+    keySig:keySigMeta?Object.assign(keyFromFifths(keySigMeta.fifths,keySigMeta.mode),{detected:false}):null,
+    timeSig:ts,
+    tempo:tempo||90,
+    measures
+  };
+}
+
+// ——— Experimental optical music recognition ———
+// Honest MVP for clean, computer-engraved scans: staff systems come from horizontal
+// dark-pixel projection, noteheads from notehead-sized vertical dark runs clustered
+// into blobs. Rhythm is approximated as one beat per detected column. Formats with
+// exact note data (.musicxml / .mxl / .mid) are always the better path.
+function omrFromImageData(img){
+  const {width:w,height:h,data}=img;
+  const gray=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++){
+    const o=i*4,a=data[o+3]/255;
+    gray[i]=(data[o]*.299+data[o+1]*.587+data[o+2]*.114)*a+255*(1-a);
+  }
+  let sum=0;for(let i=0;i<w*h;i++)sum+=gray[i];
+  const thr=Math.min(170,(sum/(w*h))*.62);
+  const dark=i=>gray[i]<thr;
+  // 1. candidate staff-line rows
+  const rowCount=new Float32Array(h);
+  for(let y=0;y<h;y++){let c=0;for(let x=0;x<w;x++)if(dark(y*w+x))c++;rowCount[y]=c;}
+  let maxRow=0;for(let y=0;y<h;y++)if(rowCount[y]>maxRow)maxRow=rowCount[y];
+  if(maxRow<w*.25)throw new Error('no staff lines detected — try a cleaner, higher-contrast image');
+  const lineRows=[];
+  for(let y=0;y<h;){
+    if(rowCount[y]>maxRow*.55){
+      let y2=y,acc=0,weight=0;
+      while(y2<h&&rowCount[y2]>maxRow*.55){acc+=y2*rowCount[y2];weight+=rowCount[y2];y2++;}
+      lineRows.push(acc/weight);
+      y=y2;
+    } else y++;
+  }
+  // 2. group into 5-line staves with consistent spacing
+  const staves=[];
+  for(let i=0;i+4<lineRows.length;){
+    const gaps=[];for(let k=0;k<4;k++)gaps.push(lineRows[i+k+1]-lineRows[i+k]);
+    const gAvg=gaps.reduce((a,b)=>a+b)/4;
+    if(gaps.every(g=>Math.abs(g-gAvg)<gAvg*.25)){
+      staves.push({top:lineRows[i],bottom:lineRows[i+4],gap:gAvg});
+      i+=5;
+    } else i++;
+  }
+  if(!staves.length)throw new Error('no complete 5-line staff found');
+  // 3. notehead blobs per staff
+  const detect=(st,isBass)=>{
+    const gap=st.gap;
+    const y0=Math.max(0,Math.round(st.top-3.5*gap)),y1=Math.min(h-1,Math.round(st.bottom+3.5*gap));
+    // staff x-extent from its top line row
+    const lr=Math.round(st.top);
+    let sx=-1,ex=-1;
+    for(let x=0;x<w;x++)if(dark(lr*w+x)){if(sx<0)sx=x;ex=x;}
+    if(sx<0){sx=0;ex=w-1;}
+    const xStart=Math.round(sx+(ex-sx)*.12); // skip clef / key / time region
+    const cols=[];
+    for(let x=xStart;x<=ex;x++){
+      let best=null,runStart=-1;
+      for(let yy=y0;yy<=y1;yy++){
+        const d=dark(yy*w+x);
+        if(d&&runStart<0)runStart=yy;
+        if((!d||yy===y1)&&runStart>=0){
+          const runEnd=(d&&yy===y1)?yy:yy-1;
+          const len=runEnd-runStart+1;
+          if(len>=gap*.55&&len<=gap*1.8){
+            const cy=(runStart+runEnd)/2;
+            if(!best||len>best.len)best={cy,len};
+          }
+          runStart=-1;
+        }
+      }
+      if(best)cols.push({x,cy:best.cy});
+    }
+    const blobs=[];
+    cols.forEach(c=>{
+      const b=blobs[blobs.length-1];
+      if(b&&c.x-b.x1<=2&&Math.abs(c.cy-b.cySum/b.n)<gap*.6){b.x1=c.x;b.cySum+=c.cy;b.xSum+=c.x;b.n++;}
+      else blobs.push({x0:c.x,x1:c.x,xSum:c.x,cySum:c.cy,n:1});
+    });
+    return blobs
+      .filter(b=>(b.x1-b.x0+1)>=gap*.7&&(b.x1-b.x0+1)<=gap*2.4)
+      .map(b=>{
+        const cy=b.cySum/b.n;
+        const steps=Math.round((st.bottom-cy)/(gap/2));
+        return {x:b.xSum/b.n,midi:staffPosToMidi(midiToStaffPos(isBass?43:64)+steps)};
+      });
+  };
+  const isGrandPair=staves.length===2&&(staves[1].top-staves[0].bottom)<staves[0].gap*9;
+  const systems=isGrandPair?[[staves[0],staves[1]]]:staves.map(s=>[s]);
+  const slots=[];
+  systems.forEach(sys=>{
+    const found=[];
+    sys.forEach((st,si)=>{
+      const isBass=sys.length===2&&si===1;
+      detect(st,isBass).forEach(nb=>found.push({x:nb.x,midi:nb.midi,hand:isBass?'L':'R'}));
+    });
+    found.sort((a,b)=>a.x-b.x);
+    const gap=sys[0].gap;
+    let cur=null,curX=-1e9;
+    found.forEach(nt=>{
+      if(nt.x-curX>gap*1.3){cur={notes:[]};slots.push(cur);}
+      curX=nt.x;
+      cur.notes.push(nt);
+    });
+  });
+  if(!slots.length)throw new Error('no noteheads detected — the optical reader needs clean, printed notation');
+  const ts={beats:4,beatType:4};
+  const measures=[];
+  slots.forEach((slot,i)=>{
+    const mi=Math.floor(i/ts.beats);
+    while(measures.length<=mi)measures.push({number:measures.length+1,events:[]});
+    ['R','L'].forEach(hand=>{
+      const ms=[...new Set(slot.notes.filter(n=>n.hand===hand).map(n=>n.midi))].sort((a,b)=>a-b);
+      if(ms.length)measures[mi].events.push({onset:i%ts.beats,duration:1,midis:ms,hand,fingerings:null});
+    });
+  });
+  return {title:null,source:'omr',keySig:null,timeSig:ts,tempo:90,measures,approx:true};
+}
+
+async function parseSheetImage(file){
+  const bmp=await createImageBitmap(file);
+  const scale=Math.min(1,1600/bmp.width);
+  const cw=Math.max(1,Math.round(bmp.width*scale)),chh=Math.max(1,Math.round(bmp.height*scale));
+  const cv=document.createElement('canvas');cv.width=cw;cv.height=chh;
+  const cx=cv.getContext('2d');
+  cx.fillStyle='#fff';cx.fillRect(0,0,cw,chh);
+  cx.drawImage(bmp,0,0,cw,chh);
+  const piece=omrFromImageData(cx.getImageData(0,0,cw,chh));
+  piece.title=(file.name||'scanned piece').replace(/\.(png|jpe?g)$/i,'');
+  return piece;
+}
+
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src;s.onload=res;s.onerror=()=>rej(new Error('failed to load '+src));
+    document.head.appendChild(s);
+  });
+}
+
+async function parseSheetPDF(file){
+  if(!window.pdfjsLib){
+    try{
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    }catch(e){throw new Error('PDF support needs network access to load pdf.js');}
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  const page=await pdf.getPage(1);
+  const vp1=page.getViewport({scale:1});
+  const vp=page.getViewport({scale:Math.min(3,1600/vp1.width)});
+  const cv=document.createElement('canvas');
+  cv.width=Math.round(vp.width);cv.height=Math.round(vp.height);
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  const piece=omrFromImageData(cv.getContext('2d').getImageData(0,0,cv.width,cv.height));
+  piece.source='omr-pdf';
+  piece.title=(file.name||'scanned piece').replace(/\.pdf$/i,'');
+  return piece;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Piece library: import, persistence, list & detail UI
+// ═══════════════════════════════════════════════════════════════════════════
+function allPieceMidis(piece){
+  const out=[];
+  piece.measures.forEach(m=>m.events.forEach(e=>out.push(...e.midis)));
+  return out;
+}
+function pieceHasHand(piece,hand){
+  return piece.measures.some(m=>m.events.some(e=>e.hand===hand));
+}
+function pieceIsGrand(piece){return pieceHasHand(piece,'L')&&pieceHasHand(piece,'R');}
+
+function importPieceObject(p,fileName){
+  if(!p||!Array.isArray(p.measures)||!p.measures.length)throw new Error('no measures parsed');
+  const midis=allPieceMidis(p);
+  if(!midis.length)throw new Error('no notes parsed');
+  p.id=p.id||'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  p.title=String(p.title||fileName||'untitled piece').trim()||'untitled piece';
+  p.timeSig=p.timeSig||{beats:4,beatType:4};
+  p.tempo=p.tempo||90;
+  if(!p.keySig)p.keySig=detectKey(midis);   // infer when the upload didn't specify one
+  annotateFingerings(p);
+  p.importedAt=Date.now();
+  pieces=pieces.filter(x=>x.id!==p.id);
+  pieces.push(p);
+  savePieces();renderPieceList();selectPiece(p.id);
+  return p;
+}
+
+function savePieces(){
+  try{
+    localStorage.setItem(PIECES_KEY,JSON.stringify({pieces}));
+  }catch(e){
+    // quota: drop the oldest piece and retry once
+    if(pieces.length>1){
+      pieces.sort((a,b)=>a.importedAt-b.importedAt).shift();
+      try{localStorage.setItem(PIECES_KEY,JSON.stringify({pieces}));}catch(e2){}
+    }
+  }
+}
+function loadPieces(){
+  try{
+    const raw=localStorage.getItem(PIECES_KEY);
+    if(!raw)return;
+    const d=JSON.parse(raw);
+    if(Array.isArray(d.pieces))pieces=d.pieces;
+  }catch(e){}
+}
+
+function setImportStatus(msg,cls){
+  const el=document.getElementById('importStatus');
+  if(!el)return;
+  el.textContent=msg||'';
+  el.style.color=cls==='err'?'var(--red)':'';
+}
+
+async function handlePieceFiles(files){
+  for(const f of [...files])await importPieceFile(f);
+}
+
+async function importPieceFile(file){
+  setImportStatus('parsing '+file.name+' …');
+  try{
+    const ext=(file.name.toLowerCase().split('.').pop()||'');
+    let piece;
+    if(ext==='musicxml'||ext==='xml')piece=parseMusicXML(await file.text(),file.name);
+    else if(ext==='mxl')piece=parseMusicXML(await extractMxlXml(await file.arrayBuffer()),file.name);
+    else if(ext==='mid'||ext==='midi')piece=parseMIDI(await file.arrayBuffer(),file.name);
+    else if(ext==='png'||ext==='jpg'||ext==='jpeg')piece=await parseSheetImage(file);
+    else if(ext==='pdf')piece=await parseSheetPDF(file);
+    else throw new Error('unsupported file type .'+ext);
+    const imported=importPieceObject(piece,file.name);
+    setImportStatus(`imported “${imported.title}” · ${imported.measures.length} measures · key ${imported.keySig.name}${imported.approx?' · ⚠ optical read — notes approximate, rhythm assumed':''}`);
+    return imported;
+  }catch(e){
+    setImportStatus('import failed: '+(e&&e.message||e),'err');
+    return null;
+  }
+}
+
+function sourceLabel(p){
+  return {musicxml:'MusicXML',midi:'MIDI',omr:'image (OMR)','omr-pdf':'PDF (OMR)'}[p.source]||p.source;
+}
+
+function renderPieceList(){
+  const el=document.getElementById('pieceList');
+  if(!el)return;
+  if(!pieces.length){
+    el.innerHTML='<div class="label">no pieces yet — import a score above to start training on real music.</div>';
+    return;
+  }
+  el.innerHTML=[...pieces].sort((a,b)=>b.importedAt-a.importedAt).map(p=>`
+    <div class="piece-row${p.id===selectedPieceId?' sel':''}" onclick="selectPiece('${p.id}')">
+      <span><span class="t">${escapeHtml(p.title)}</span>
+        <span class="meta"> · ${p.keySig?escapeHtml(p.keySig.name):''} · ${p.measures.length} measures · ${sourceLabel(p)}</span></span>
+      <span class="meta">${p.assessment?'assessed ✓':''}</span>
+    </div>`).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function selectPiece(id){
+  selectedPieceId=id;
+  renderPieceList();
+  renderPieceDetail();
+}
+
+function renderPieceDetail(){
+  const box=document.getElementById('pieceDetail');
+  if(!box)return;
+  const p=pieces.find(x=>x.id===selectedPieceId);
+  if(!p){box.style.display='none';return;}
+  box.style.display='';
+  document.getElementById('pieceDetailTitle').textContent=p.title;
+  const meta=document.getElementById('pieceDetailMeta');
+  const kd=p.keySig&&p.keySig.detected?' (detected)':'';
+  meta.innerHTML=[
+    `<span class="pill green">${escapeHtml(p.keySig?p.keySig.name+kd:'key unknown')}</span>`,
+    `<span class="pill">${p.timeSig.beats}/${p.timeSig.beatType}</span>`,
+    `<span class="pill">${p.measures.length} measures</span>`,
+    `<span class="pill">♩ = ${p.tempo}</span>`,
+    `<span class="pill">${sourceLabel(p)}</span>`,
+    p.approx?'<span class="pill amber">optical read — approximate</span>':''
+  ].filter(Boolean).join(' ');
+  const lhBtn=document.getElementById('pieceLeftHandBtn');
+  if(lhBtn)lhBtn.style.display=pieceHasHand(p,'L')?'':'none';
+  const sum=document.getElementById('pieceAssessSummary');
+  const planHead=document.getElementById('planHeading');
+  const planEl=document.getElementById('planSteps');
+  if(p.assessment){
+    const rows=p.assessment.summary||[];
+    const hard=rows.filter(r=>r.difficult).map(r=>r.measure);
+    const acc=rows.length?Math.round(rows.reduce((s,r)=>s+r.accuracy,0)/rows.length*100):0;
+    sum.textContent=`last assessment: ${acc}% accuracy · ${hard.length?('tricky measures: '+hard.join(', ')):'no weak measures — nice!'}`;
+    planHead.style.display='';
+    planEl.innerHTML=p.assessment.plan.map((st,i)=>`
+      <div class="plan-step">
+        <span><span class="d">${i+1}. ${escapeHtml(st.label)}</span><br><span class="why">${escapeHtml(st.why)}</span></span>
+        <button onclick="startPlanStep(${i})">start →</button>
+      </div>`).join('');
+  } else {
+    sum.textContent='run a play-assessment to get a personalized practice plan.';
+    planHead.style.display='none';
+    planEl.innerHTML='';
+  }
+}
+
+function deleteSelectedPiece(){
+  const p=pieces.find(x=>x.id===selectedPieceId);
+  if(!p)return;
+  if(!confirm(`Remove “${p.title}” from the library?`))return;
+  pieces=pieces.filter(x=>x.id!==selectedPieceId);
+  selectedPieceId=null;
+  savePieces();renderPieceList();renderPieceDetail();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Piece practice: queue, cursor, staff rendering, assessment & practice plans
+// ═══════════════════════════════════════════════════════════════════════════
+function buildPieceQueue(piece,opts){
+  const q=[];
+  piece.measures.forEach((m,mi)=>{
+    const num=mi+1;
+    if(opts.measures&&(num<opts.measures[0]||num>opts.measures[1]))return;
+    const byOnset={};
+    m.events.forEach(ev=>{
+      if(opts.hand!=='both'&&ev.hand!==opts.hand)return;
+      const k=ev.onset.toFixed(4);
+      (byOnset[k]=byOnset[k]||[]).push(ev);
+    });
+    Object.keys(byOnset).sort((a,b)=>+a-+b).forEach(k=>{
+      const evs=byOnset[k];
+      q.push({
+        measure:num,measureIdx:mi,onset:+k,events:evs,
+        midis:[...new Set(evs.flatMap(e=>e.midis))].sort((a,b)=>a-b)
+      });
+    });
+  });
+  return q;
+}
+
+function startPiecePractice(pieceId,opts){
+  const piece=pieces.find(p=>p.id===pieceId);
+  if(!piece)return;
+  opts=Object.assign({measures:null,hand:'both',tempoPct:100,assess:false},opts||{});
+  const q=buildPieceQueue(piece,opts);
+  if(!q.length){setImportStatus('nothing to practice with those settings','err');return;}
+  currentPiece=piece;pieceOpts=opts;pieceQueue=q;pieceCursor=0;
+  practiceMode='piece';
+  assessRun=opts.assess?{perMeasure:{},startedAt:Date.now()}:null;
+  if(opts.tempoPct&&piece.tempo)setBPM(Math.round(piece.tempo*opts.tempoPct/100));
+  showTab('practice');
+  const banner=document.getElementById('pieceBanner');
+  if(banner)banner.style.display='';
+  setPieceTarget();
+}
+function startPiecePracticeFromDetail(hand){
+  if(!selectedPieceId)return;
+  startPiecePractice(selectedPieceId,{hand});
+}
+function startAssessment(){
+  if(!selectedPieceId)return;
+  // assessment runs a touch under tempo so it measures reading, not typing speed
+  startPiecePractice(selectedPieceId,{assess:true,tempoPct:80});
+}
+
+function setPieceTarget(){
+  const step=pieceQueue[pieceCursor];
+  targetMidis=[...step.midis];
+  currentEx={
+    type:'piece',
+    midis:targetMidis,
+    label:targetMidis.map(nn).join(' · '),
+    clef:pieceIsGrand(currentPiece)?'grand':(pieceHasHand(currentPiece,'L')?'bass':'treble')
+  };
+  exerciseStartedAt=performance.now();
+  exerciseScored=false;
+  setStatus('ready',`measure ${step.measure}`);
+  drawStaff();drawPiano();updateNotationHint();updatePieceBanner();
+}
+
+function updatePieceBanner(){
+  const t=document.getElementById('pieceBannerTitle'),pos=document.getElementById('pieceBannerPos');
+  if(!t||!pos||!currentPiece)return;
+  const step=pieceQueue[Math.min(pieceCursor,pieceQueue.length-1)];
+  const handTxt=pieceOpts.hand==='both'?'':(pieceOpts.hand==='R'?' · right hand':' · left hand');
+  const assessTxt=pieceOpts.assess?' · assessment':'';
+  const rangeTxt=pieceOpts.measures?` · m.${pieceOpts.measures[0]}–${pieceOpts.measures[1]}`:'';
+  const tempoTxt=pieceOpts.tempoPct!==100?` · ${pieceOpts.tempoPct}% tempo`:'';
+  t.textContent=`𝅘𝅥𝅮 ${currentPiece.title}${handTxt}${assessTxt}${rangeTxt}${tempoTxt}`;
+  pos.textContent=`measure ${step.measure} · step ${Math.min(pieceCursor+1,pieceQueue.length)}/${pieceQueue.length}`;
+}
+
+function advancePiece(){
+  pieceCursor++;
+  if(pieceCursor>=pieceQueue.length){finishPieceRun();return;}
+  setPieceTarget();
+}
+
+function finishPieceRun(){
+  if(pieceOpts.assess&&assessRun){finishAssessment();return;}
+  setStatus('green','piece complete');
+  setNotationHint(`“${currentPiece.title}” complete — nice work`,'ok');
+  updatePieceBanner();
+  drawStaff();
+}
+
+function exitPiecePractice(){
+  practiceMode='drill';
+  currentPiece=null;pieceQueue=[];pieceCursor=0;assessRun=null;
+  const banner=document.getElementById('pieceBanner');
+  if(banner)banner.style.display='none';
+  nextExercise();
+}
+
+function recordAssess(ok,ms){
+  if(!assessRun)return;
+  const step=pieceQueue[pieceCursor];
+  if(!step)return;
+  const r=assessRun.perMeasure[step.measure]=assessRun.perMeasure[step.measure]||{attempts:0,correct:0,totalMs:0};
+  r.attempts++;
+  if(ok){r.correct++;if(ms!=null)r.totalMs+=ms;}
+}
+
+function summarizeAssessment(perMeasure){
+  const rows=Object.entries(perMeasure).map(([m,r])=>({
+    measure:+m,
+    attempts:r.attempts,
+    correct:r.correct,
+    accuracy:r.attempts?r.correct/r.attempts:0,
+    avgMs:r.correct?r.totalMs/r.correct:null
+  })).sort((a,b)=>a.measure-b.measure);
+  const times=rows.map(r=>r.avgMs).filter(x=>x!=null).sort((a,b)=>a-b);
+  const median=times.length?times[Math.floor(times.length/2)]:null;
+  rows.forEach(r=>{
+    r.slow=median!=null&&r.avgMs!=null&&r.avgMs>median*1.6&&r.avgMs>1200;
+    r.difficult=r.accuracy<0.8||r.slow;
+  });
+  return rows;
+}
+
+// Turn an assessment into a concrete plan: isolate weak measure ranges (hands
+// separate → together, slow), then ramp the whole piece back up to tempo.
+function generatePracticePlan(assessment,piece){
+  const rows=assessment.summary||summarizeAssessment(assessment.perMeasure);
+  const hard=rows.filter(r=>r.difficult).map(r=>r.measure).sort((a,b)=>a-b);
+  const ranges=[];
+  hard.forEach(m=>{
+    const r=ranges[ranges.length-1];
+    if(r&&m<=r[1]+1)r[1]=m;else ranges.push([m,m]);
+  });
+  const both=pieceIsGrand(piece);
+  const steps=[];
+  ranges.slice(0,3).forEach(rg=>{
+    const label=rg[0]===rg[1]?`measure ${rg[0]}`:`measures ${rg[0]}–${rg[1]}`;
+    if(both){
+      steps.push({label:`${label} · right hand · 60% tempo`,measures:rg,hand:'R',tempoPct:60,why:'isolate the trouble spot one hand at a time'});
+      steps.push({label:`${label} · left hand · 60% tempo`,measures:rg,hand:'L',tempoPct:60,why:'left hand alone before recombining'});
+      steps.push({label:`${label} · hands together · 70% tempo`,measures:rg,hand:'both',tempoPct:70,why:'recombine slowly before speeding up'});
+    } else {
+      steps.push({label:`${label} · slow loop · 60% tempo`,measures:rg,hand:'both',tempoPct:60,why:'drill the weak spot well under tempo'});
+    }
+  });
+  (hard.length?[70,85,100]:[85,100]).forEach(pct=>{
+    steps.push({label:`full piece · ${pct}% tempo`,measures:null,hand:'both',tempoPct:pct,
+      why:pct===100?'target-tempo run-through':'progressive tempo ramp'});
+  });
+  return steps;
+}
+
+function finishAssessment(){
+  const a={date:Date.now(),perMeasure:assessRun.perMeasure};
+  a.summary=summarizeAssessment(a.perMeasure);
+  a.plan=generatePracticePlan(a,currentPiece);
+  currentPiece.assessment=a;
+  const pid=currentPiece.id;
+  savePieces();
+  exitPiecePractice();
+  selectPiece(pid);
+  showTab('pieces');
+  setImportStatus('assessment complete — your practice plan is ready below.');
+}
+
+function startPlanStep(i){
+  const piece=pieces.find(p=>p.id===selectedPieceId);
+  if(!piece||!piece.assessment)return;
+  const st=piece.assessment.plan[i];
+  if(!st)return;
+  startPiecePractice(piece.id,{measures:st.measures,hand:st.hand,tempoPct:st.tempoPct});
+}
+
+// ——— Piece staff rendering ———
+const KEYSIG_MIDIS={
+  sharps:{treble:[77,72,79,74,69,76,71],bass:[53,48,55,50,45,52,47]},
+  flats:{treble:[71,76,69,74,67,72,65],bass:[47,52,45,50,43,48,41]}
+};
+function drawKeySignature(ctx,fifths,x,top,lg,isBass,ink){
+  if(!fifths)return x;
+  const sharps=fifths>0;
+  const list=(sharps?KEYSIG_MIDIS.sharps:KEYSIG_MIDIS.flats)[isBass?'bass':'treble'].slice(0,Math.abs(fifths));
+  ctx.fillStyle=ink;ctx.font=`bold ${Math.round(lg*1.35)}px serif`;
+  ctx.textAlign='left';ctx.textBaseline='middle';
+  list.forEach((m,i)=>ctx.fillText(sharps?'♯':'♭',x+i*lg*.72,noteY(m,top,lg,isBass)));
+  ctx.textBaseline='alphabetic';
+  return x+list.length*lg*.72+lg*.6;
+}
+
+function drawPieceStaff(){
+  const canvas=document.getElementById('staffCanvas');
+  canvas.style.width='';
+  const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
+  const piece=currentPiece;
+  const grand=pieceIsGrand(piece);
+  const topIsBass=!grand&&pieceHasHand(piece,'L');
+  const met=staffMetrics(W,grand);
+  const lg=met.lg,tTop=met.tTop,bTop=grand?met.bTop:null;
+  const fifths=(piece.keySig&&piece.keySig.fifths)||0;
+  const scalePcs=keyScalePcs(fifths);
+  // layout: pack measures into lines, then render the line holding the cursor
+  const slotsOf=piece.measures.map(mm=>{
+    const set=new Set();
+    mm.events.forEach(e=>set.add(e.onset.toFixed(4)));
+    return Math.max(1,set.size);
+  });
+  const noteSpace=lg*3.2;
+  const headW=60+lg*1.2+Math.abs(fifths)*lg*.72+lg*3.2;
+  const mW=i=>slotsOf[i]*noteSpace+lg*1.8;
+  const lines=[];
+  let cur={start:0,end:0},x=headW;
+  for(let i=0;i<piece.measures.length;i++){
+    if(i>cur.start&&x+mW(i)>W-14){lines.push(cur);cur={start:i,end:i};x=headW;}
+    cur.end=i;x+=mW(i);
+  }
+  lines.push(cur);
+  const finished=pieceCursor>=pieceQueue.length;
+  const step=pieceQueue[Math.min(pieceCursor,pieceQueue.length-1)];
+  const curMi=step?step.measureIdx:0;
+  const line=lines.find(L=>curMi>=L.start&&curMi<=L.end)||lines[0];
+
+  const ctx=setupHiDPICanvas(canvas,W,met.H);
+  ctx.clearRect(0,0,W,met.H);
+  const colors=getColors();
+  const {ink,ink2,ink3,green,bg,greenLight}=colors;
+  const doneColor='#9FE1CB';
+  const staffBottom=(grand?bTop:tTop)+4*lg;
+
+  // current-measure highlight band goes underneath the staff lines
+  if(!finished){
+    let bandX=headW;
+    for(let mi=line.start;mi<curMi;mi++)bandX+=mW(mi);
+    if(curMi>=line.start&&curMi<=line.end){
+      ctx.fillStyle=greenLight;ctx.globalAlpha=.4;
+      ctx.fillRect(bandX-lg*.4,tTop-lg*2.4,mW(curMi),staffBottom-tTop+lg*4.4);
+      ctx.globalAlpha=1;
+    }
+  }
+
+  drawLines(ctx,W,tTop,lg,ink);
+  ctx.fillStyle=ink;ctx.textAlign='left';
+  if(grand){
+    drawLines(ctx,W,bTop,lg,ink);
+    ctx.font=`${lg*5.5}px serif`;ctx.fillText('𝄞',10,tTop+lg*5.2);
+    ctx.font=`${lg*4.5}px serif`;ctx.fillText('𝄢',10,bTop+lg*4.8);
+    ctx.lineWidth=1.5;ctx.strokeStyle=ink;
+    ctx.beginPath();ctx.moveTo(60,tTop);ctx.lineTo(60,staffBottom);ctx.stroke();
+  } else {
+    ctx.font=`${lg*5.2}px serif`;
+    ctx.fillText(topIsBass?'𝄢':'𝄞',10,topIsBass?tTop+lg*4.8:tTop+lg*5.2);
+  }
+  let sigEnd=drawKeySignature(ctx,fifths,66,tTop,lg,topIsBass,ink);
+  if(grand)sigEnd=Math.max(sigEnd,drawKeySignature(ctx,fifths,66,bTop,lg,true,ink));
+  // time signature
+  ctx.fillStyle=ink;ctx.font=`bold ${Math.round(lg*2.1)}px serif`;ctx.textAlign='center';
+  const tsX=Math.max(sigEnd,66)+lg*1.1;
+  ctx.fillText(String(piece.timeSig.beats),tsX,tTop+lg*1.75);
+  ctx.fillText(String(piece.timeSig.beatType),tsX,tTop+lg*3.85);
+  if(grand){
+    ctx.fillText(String(piece.timeSig.beats),tsX,bTop+lg*1.75);
+    ctx.fillText(String(piece.timeSig.beatType),tsX,bTop+lg*3.85);
+  }
+  ctx.textAlign='left';
+
+  // measures
+  let xm=headW;
+  ctx.font=`9px IBM Plex Mono`;
+  for(let mi=line.start;mi<=line.end;mi++){
+    const meas=piece.measures[mi];
+    const wM=mW(mi);
+    // measure number
+    ctx.fillStyle=ink3;ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
+    ctx.fillText(String(mi+1),xm-lg*.2,tTop-lg*1.7);
+    // barline at measure end
+    ctx.strokeStyle=ink2;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(xm+wM-lg*.4,tTop);ctx.lineTo(xm+wM-lg*.4,staffBottom);ctx.stroke();
+    const onsets=[...new Set(meas.events.map(e=>e.onset.toFixed(4)))].sort((a,b)=>+a-+b);
+    meas.events.forEach(ev=>{
+      const idx=onsets.indexOf(ev.onset.toFixed(4));
+      const ex=xm+lg*1.2+idx*noteSpace;
+      const inHand=pieceOpts.hand==='both'||ev.hand===pieceOpts.hand;
+      let state='future';
+      if(finished)state='past';
+      else if(step){
+        if(mi<curMi||(mi===curMi&&ev.onset<step.onset-1e-6))state='past';
+        else if(mi===curMi&&Math.abs(ev.onset-step.onset)<1e-6)state='current';
+      }
+      const col=!inHand?ink3:(state==='current'?green:state==='past'?doneColor:ink);
+      const evIsBass=grand?ev.hand==='L':topIsBass;
+      const top=(grand&&ev.hand==='L')?bTop:tTop;
+      ev.midis.forEach(mm=>{
+        const perNote={
+          noAccidental:scalePcs.includes(((mm%12)+12)%12),
+          open:ev.duration>=2,
+          noStem:ev.duration>=4
+        };
+        drawNote(ctx,mm,ex,top,lg,col,col,true,evIsBass,perNote);
+      });
+      if(showFingering&&ev.fingerings&&ev.fingerings.length){
+        const sorted=[...ev.midis].sort((a,b)=>a-b);
+        const items=sorted.map((mm,i)=>({midi:mm,f:ev.fingerings[i],y:noteY(mm,top,lg,evIsBass)}))
+          .filter(it=>it.f);
+        const above=ev.hand==='R';
+        const edgeY=above?top-lg*1.1:top+4*lg+lg*1.1;
+        drawFingeringStack(ctx,items,ex,lg,above,edgeY,inHand?ink2:ink3,bg);
+      }
+    });
+    xm+=wM;
+  }
+  // line indicator (e.g. "line 2/4")
+  const li=lines.indexOf(line);
+  ctx.fillStyle=ink3;ctx.font='10px IBM Plex Mono';ctx.textAlign='right';
+  ctx.fillText(`line ${li+1}/${lines.length}`,W-8,12);
+  ctx.textAlign='left';
+}
+
 // ——— Rhythm timing classification ———
 function classifyTiming(playedAt){
   if(!rhythmActive || !currentBeatStartedAt || !playedAt) return null;
@@ -837,7 +2027,7 @@ function checkAnswer(played,playedAt=null){
 
   const responseMs=(exerciseStartedAt!=null)?performance.now()-exerciseStartedAt:null;
 
-  levelAttempts[Math.min(level,5)]++;
+  if(practiceMode==='drill')levelAttempts[Math.min(level,5)]++;
 
   // Diagnostic error stats (missing is empty when the answer is accepted).
   missing.forEach(m=>{const k=nn(m);errorStats.missingNotes[k]=(errorStats.missingNotes[k]||0)+1;missedNotes[k]=(missedNotes[k]||0)+1;});
@@ -851,7 +2041,7 @@ function checkAnswer(played,playedAt=null){
   if(ok){
     score.correct++;score.total++;score.streak++;score.xp+=(level+1)*8+5;
     if(score.streak>score.bestStreak)score.bestStreak=score.streak;
-    levelScores[Math.min(level,5)]++;
+    if(practiceMode==='drill')levelScores[Math.min(level,5)]++;
     // Record response time once, on the first accepted answer for this exercise.
     if(!exerciseScored && responseMs!=null){recordResponse(responseMs);exerciseScored=true;}
     const okMsg=extras.length?('correct · '+feedback):'correct';
@@ -860,7 +2050,10 @@ function checkAnswer(played,playedAt=null){
     updateTimingPill(timing);
     flashStaff('#9FE1CB');
     updateUI();saveState();
-    if(currentEx.type==='progression'&&currentEx.chordIdx<currentEx.chords.length-1){
+    if(practiceMode==='piece'){
+      recordAssess(true,responseMs);
+      setTimeout(advancePiece,450);
+    } else if(currentEx.type==='progression'&&currentEx.chordIdx<currentEx.chords.length-1){
       currentEx.chordIdx++;
       const ch=currentEx.chords[currentEx.chordIdx];
       targetMidis=CHORD_TYPES[ch.t].map(i=>ch.r+i);
@@ -871,6 +2064,7 @@ function checkAnswer(played,playedAt=null){
     }
   } else {
     score.total++;score.streak=0;
+    if(practiceMode==='piece')recordAssess(false,null);
     const msg=feedback||'try again';
     setStatus('red', msg);
     setNotationHint(msg, 'err');
@@ -995,7 +2189,7 @@ function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       score,levelScores,levelAttempts,missedNotes,errorStats,responseStats,rhythmScore,
-      settings:{level,clef,hintMode,answerMode,adaptiveMode}
+      settings:{level,clef,hintMode,answerMode,adaptiveMode,showFingering}
     }));
   }catch(e){}
 }
@@ -1018,6 +2212,7 @@ function loadState(){
       if(st.hintMode)hintMode=st.hintMode;
       if(st.answerMode)answerMode=st.answerMode;
       adaptiveMode=!!st.adaptiveMode;
+      if(typeof st.showFingering==='boolean')showFingering=st.showFingering;
     }
   }catch(e){}
 }
@@ -1029,6 +2224,8 @@ function applySettingsToControls(){
   const hs=document.getElementById('hintModeSel');if(hs)hs.value=hintMode;
   const cf=document.getElementById('chkForgiving');if(cf)cf.checked=(answerMode==='forgiving');
   const ca=document.getElementById('chkAdaptive');if(ca)ca.checked=adaptiveMode;
+  const fb=document.getElementById('fingeringBtn');
+  if(fb){fb.classList.toggle('on',showFingering);fb.setAttribute('aria-pressed',String(showFingering));}
 }
 
 function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
@@ -1279,8 +2476,10 @@ function resetStats(){
 
 window.addEventListener('load',()=>{
   loadState();
+  loadPieces();
   applySettingsToControls();
   renderBeatDots();initBuilder();buildUpdate();
+  renderPieceList();
   updateUI();
   nextExercise();
   window.addEventListener('resize',()=>{drawStaff();drawPiano()});
