@@ -1,0 +1,92 @@
+{
+  "title": "Ties and Sustains",
+  "keyName": "C major",
+  "fifths": 0,
+  "mode": "major",
+  "timeSig": {
+    "beats": 4,
+    "beatType": 4
+  },
+  "tempo": 76,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            72
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            48
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 4,
+          "midis": [
+            76
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            43
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            48
+          ],
+          "hand": "L"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            72
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            48
+          ],
+          "hand": "L"
+        }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,15 @@
 {
   "name": "chordpath",
-  "version": "3.0.0",
-  "description": "Single-file HTML piano sight-reading trainer",
+  "version": "4.0.0",
+  "description": "Single-file HTML piano sight-reading trainer, score editor and import engine",
   "private": true,
   "scripts": {
     "serve": "http-server -p 8080 -c-1 -s .",
     "test": "playwright test",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "uat": "playwright test tests/uat/sheet_music_import/import-accuracy.spec.ts",
+    "uat:report": "node tests/uat/sheet_music_import/report.mjs",
+    "uat:generate": "node tests/uat/sheet_music_import/generate.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",

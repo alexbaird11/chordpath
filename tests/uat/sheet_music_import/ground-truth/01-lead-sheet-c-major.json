@@ -1,0 +1,123 @@
+{
+  "title": "Lead Sheet in C",
+  "keyName": "C major",
+  "fifths": 0,
+  "mode": "major",
+  "timeSig": {
+    "beats": 4,
+    "beatType": 4
+  },
+  "tempo": 100,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            60
+          ],
+          "hand": "R",
+          "fingering": 1,
+          "dyn": "mf"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            62
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            64
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3,
+          "duration": 1,
+          "midis": [
+            65
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            67
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            64
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            65
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            64
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            62
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3,
+          "duration": 1,
+          "midis": [
+            60
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            60
+          ],
+          "hand": "R"
+        }
+      ]
+    }
+  ]
+}

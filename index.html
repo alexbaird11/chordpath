@@ -118,6 +118,24 @@
   .plan-step .d { font-size: 12px; }
   .plan-step .why { font-size: 11px; color: var(--ink2); }
   .plan-step.done { opacity: .55; }
+  /* ——— Score editor ——— */
+  .ed-toolbar, .ed-settings { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .ed-settings { gap: 12px; }
+  .ed-settings input, .ed-settings select { padding: 4px 8px; }
+  .ed-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .ed-palette-bar { display: flex; gap: 14px; flex-wrap: wrap; align-items: stretch; background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; }
+  .pal-group { display: flex; align-items: center; gap: 4px; padding-right: 12px; border-right: 0.5px solid var(--border); }
+  .pal-group:last-child { border-right: none; padding-right: 0; }
+  .pal-label { font-size: 10px; color: var(--ink3); text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+  button.pal { min-width: 30px; padding: 5px 7px; font-size: 15px; line-height: 1; text-align: center; }
+  button.pal.sel { background: var(--green); color: #fff; border-color: var(--green); }
+  .ed-canvas-wrap { border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--bg); max-height: 560px; overflow: auto; }
+  #editorCanvas { display: block; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); padding: 20px; width: min(440px, 92vw); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+  .wiz-grid { display: flex; flex-direction: column; gap: 12px; }
+  .wiz-grid label { display: flex; flex-direction: column; gap: 4px; }
+  .wiz-grid input, .wiz-grid select { padding: 6px 10px; }
 </style>
 </head>
 <body>
@@ -131,6 +149,7 @@
     <div class="tab-bar">
       <button class="tab active" data-tab="practice" onclick="showTab('practice')">practice</button>
       <button class="tab" data-tab="pieces" onclick="showTab('pieces')">pieces</button>
+      <button class="tab" data-tab="editor" onclick="showTab('editor')">editor</button>
       <button class="tab" data-tab="metronome" onclick="showTab('metronome')">metronome</button>
       <button class="tab" data-tab="builder" onclick="showTab('builder')">exercise builder</button>
       <button class="tab" data-tab="stats" onclick="showTab('stats')">stats</button>
@@ -242,11 +261,121 @@
           <button onclick="startPiecePracticeFromDetail('R')">right hand only</button>
           <button id="pieceLeftHandBtn" onclick="startPiecePracticeFromDetail('L')">left hand only</button>
           <button onclick="startAssessment()">play-assessment</button>
+          <button onclick="editorLoadPiece(selectedPieceId)">edit / correct →</button>
           <button class="danger" onclick="deleteSelectedPiece()">remove</button>
         </div>
         <div class="label" id="pieceAssessSummary" style="margin-bottom:10px"></div>
         <div class="sect" id="planHeading" style="display:none">personalized practice plan</div>
         <div id="planSteps" class="col"></div>
+      </div>
+    </div>
+
+    <!-- EDITOR TAB (drag-and-drop notation editor & authoring) -->
+    <div id="tab-editor" class="tab-pane">
+      <div class="ed-toolbar">
+        <button class="accent" onclick="openScoreWizard()">＋ new score</button>
+        <button id="edUndoBtn" onclick="editorUndo()" title="undo (Ctrl+Z)">↶ undo</button>
+        <button id="edRedoBtn" onclick="editorRedo()" title="redo (Ctrl+Shift+Z)">↷ redo</button>
+        <span class="ed-sep"></span>
+        <button onclick="editorPlay()" title="play back">▶ play</button>
+        <button onclick="editorStopPlayback()">■ stop</button>
+        <span class="ed-sep"></span>
+        <button class="accent" onclick="editorSaveToLibrary()">save to library</button>
+        <button onclick="editorSaveAndPractice()">save &amp; practice →</button>
+        <span class="ed-sep"></span>
+        <span class="label">export:</span>
+        <button onclick="editorExport('musicxml')">MusicXML</button>
+        <button onclick="editorExport('midi')">MIDI</button>
+        <button onclick="editorExport('pdf')">PDF</button>
+      </div>
+
+      <div class="ed-settings">
+        <label class="label">title <input id="edTitleInput" type="text" oninput="editorSetTitle(this.value)" style="width:150px"></label>
+        <label class="label">composer <input id="edComposerInput" type="text" oninput="editorSetComposer(this.value)" style="width:130px"></label>
+        <label class="label">staff
+          <select id="edStaffSel" onchange="editorSetStaffType(this.value)">
+            <option value="grand">grand</option><option value="treble">treble</option><option value="bass">bass</option>
+          </select></label>
+        <label class="label">key
+          <select id="edKeySel" onchange="(function(v){var a=v.split(':');editorSetKey(+a[0],a[1]);})(this.value)"></select></label>
+        <label class="label">time
+          <select id="edTimeSel" onchange="(function(v){var a=v.split('/');editorSetTime(+a[0],+a[1]);})(this.value)">
+            <option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option><option>3/8</option><option>9/8</option><option>12/8</option><option>5/4</option>
+          </select></label>
+        <label class="label">♩= <input id="edTempoInput" type="number" min="20" max="300" value="90" oninput="editorSetTempo(+this.value)" style="width:56px"></label>
+        <button onclick="editorAddMeasure()">+ measure</button>
+        <button onclick="editorRemoveMeasure()">− measure</button>
+      </div>
+
+      <div class="ed-palette-bar">
+        <div class="pal-group" id="durPalette">
+          <span class="pal-label">note</span>
+          <button class="pal" data-dur="4" onclick="edSetDurTool(4)" title="whole">𝅝</button>
+          <button class="pal" data-dur="2" onclick="edSetDurTool(2)" title="half">𝅗𝅥</button>
+          <button class="pal sel" data-dur="1" onclick="edSetDurTool(1)" title="quarter">♩</button>
+          <button class="pal" data-dur="0.5" onclick="edSetDurTool(0.5)" title="eighth">♪</button>
+          <button class="pal" data-dur="0.25" onclick="edSetDurTool(0.25)" title="sixteenth">𝅘𝅥𝅯</button>
+          <button class="pal" data-dur="0.125" onclick="edSetDurTool(0.125)" title="thirty-second">𝅘𝅥𝅰</button>
+          <button class="pal" id="edDotBtn" onclick="edToggleDot()" title="dotted">•</button>
+          <button class="pal" id="edRestBtn" onclick="edSetRestTool()" title="rest">𝄽</button>
+        </div>
+        <div class="pal-group" id="accPalette">
+          <span class="pal-label">accidental</span>
+          <button class="pal" data-acc="-2" onclick="edSetAccTool(-2)" title="double flat">𝄫</button>
+          <button class="pal" data-acc="-1" onclick="edSetAccTool(-1)" title="flat">♭</button>
+          <button class="pal sel" data-acc="0" onclick="edSetAccTool(0)" title="natural">♮</button>
+          <button class="pal" data-acc="1" onclick="edSetAccTool(1)" title="sharp">♯</button>
+          <button class="pal" data-acc="2" onclick="edSetAccTool(2)" title="double sharp">𝄪</button>
+        </div>
+        <div class="pal-group">
+          <span class="pal-label">fingering</span>
+          <button class="pal" onclick="edSetFingerTool(1)">1</button>
+          <button class="pal" onclick="edSetFingerTool(2)">2</button>
+          <button class="pal" onclick="edSetFingerTool(3)">3</button>
+          <button class="pal" onclick="edSetFingerTool(4)">4</button>
+          <button class="pal" onclick="edSetFingerTool(5)">5</button>
+        </div>
+        <div class="pal-group">
+          <span class="pal-label">dynamics</span>
+          <button class="pal" onclick="edSetDynTool('pp')">pp</button>
+          <button class="pal" onclick="edSetDynTool('p')">p</button>
+          <button class="pal" onclick="edSetDynTool('mp')">mp</button>
+          <button class="pal" onclick="edSetDynTool('mf')">mf</button>
+          <button class="pal" onclick="edSetDynTool('f')">f</button>
+          <button class="pal" onclick="edSetDynTool('ff')">ff</button>
+          <button class="pal" onclick="edSetDynTool('')" title="clear">✕</button>
+        </div>
+      </div>
+
+      <div class="label" id="editorInfo" style="margin:6px 0 2px"></div>
+      <div class="ed-canvas-wrap"><canvas id="editorCanvas"></canvas></div>
+      <div class="label" style="margin-top:6px">
+        pick a duration/accidental from the palette, then click a staff line or space to place a note ·
+        click a notehead to select, drag up/down or use ↑/↓ to change pitch · Delete removes it · Ctrl+Z / Ctrl+Shift+Z undo/redo
+      </div>
+      <div id="editorStatus" class="label" style="min-height:16px;margin-top:4px"></div>
+    </div>
+
+    <!-- SCORE CREATION WIZARD -->
+    <div id="wizardModal" class="modal-overlay" style="display:none">
+      <div class="modal">
+        <div class="sect" style="margin-top:0">new score</div>
+        <div class="wiz-grid">
+          <label class="label">title<input id="wizTitle" type="text" value="Untitled Score"></label>
+          <label class="label">composer<input id="wizComposer" type="text" value=""></label>
+          <label class="label">staff type
+            <select id="wizStaff"><option value="grand">grand staff (piano)</option><option value="treble">treble</option><option value="bass">bass</option></select></label>
+          <label class="label">key signature<select id="wizKey"></select></label>
+          <label class="label">time signature
+            <select id="wizBeats"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>9</option><option>12</option></select>
+            <span>/</span>
+            <select id="wizBeatType"><option selected>4</option><option>8</option><option>2</option></select></label>
+          <label class="label">tempo (BPM)<input id="wizTempo" type="number" min="20" max="300" value="90"></label>
+        </div>
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">
+          <button onclick="closeScoreWizard()">cancel</button>
+          <button class="accent" onclick="createScoreFromWizard()">create →</button>
+        </div>
       </div>
     </div>
 
@@ -467,6 +596,7 @@ function showTab(t){
   document.querySelectorAll('.tab-pane').forEach(p=>{
     p.classList.toggle('active',p.id==='tab-'+t);
   });
+  if(t==='editor')requestAnimationFrame(edRender);
 }
 
 function setLevel(l){level=l;saveState();nextExercise()}
@@ -1099,10 +1229,18 @@ function annotateFingerings(piece){
     const flush=()=>{
       if(!run.length)return;
       const fingers=inferMelodicFingering(run.map(e=>e.midis[0]),hand);
-      run.forEach((e,i)=>e.fingerings=[fingers[i]]);
+      run.forEach((e,i)=>{if(!e.fingerings)e.fingerings=[fingers[i]];});
       run=[];
     };
+    // honor fingerings that arrived in the source file before inferring the rest
     evs.forEach(ev=>{
+      if(ev.xmlFingers){
+        const sorted=[...ev.midis].sort((a,b)=>a-b);
+        if(sorted.every(m=>ev.xmlFingers[m]!=null))ev.fingerings=sorted.map(m=>ev.xmlFingers[m]);
+      }
+    });
+    evs.forEach(ev=>{
+      if(ev.fingerings)return;              // already supplied by the file
       if(ev.midis.length===1)run.push(ev);
       else{flush();ev.fingerings=fingeringForCluster([...ev.midis].sort((a,b)=>a-b),hand);}
     });
@@ -1173,9 +1311,13 @@ function parseMusicXML(xmlText,fileName){
   const measureMap=[];
   parts.forEach((part,pi)=>{
     let div=1;
+    // tracks the still-open attack per hand+pitch so a tied continuation extends its
+    // duration instead of being dropped — persists across barlines so ties over the
+    // measure line (common in piano writing) preserve the full held length of the note
+    const tieOpen={};
     [...part.children].filter(el=>el.tagName==='measure').forEach((meas,mi)=>{
       if(!measureMap[mi])measureMap[mi]={number:mi+1,events:[]};
-      let onset=0,lastOnset=0;
+      let onset=0,lastOnset=0,pendingDyn=null;
       [...meas.children].forEach(el=>{
         const tag=el.tagName;
         if(tag==='attributes'){
@@ -1187,6 +1329,10 @@ function parseMusicXML(xmlText,fileName){
         } else if(tag==='direction'){
           const s=el.querySelector('sound[tempo]');
           if(s&&!tempo)tempo=Math.round(+s.getAttribute('tempo'))||null;
+          const dyn=el.querySelector('direction-type dynamics');
+          if(dyn){const d=[...dyn.children].map(c=>c.tagName).find(Boolean);if(d)pendingDyn=d;}
+          const words=el.querySelector('direction-type words');
+          if(words&&/^\s*(rit|rall|accel|a tempo)/i.test(words.textContent||'')){/* tempo text noted, no model change */}
         } else if(tag==='sound'){
           if(el.getAttribute('tempo')&&!tempo)tempo=Math.round(+el.getAttribute('tempo'))||null;
         } else if(tag==='backup'){
@@ -1203,10 +1349,8 @@ function parseMusicXML(xmlText,fileName){
           if(!grace&&!isChord)onset+=dur;
           if(isRest||grace)return;
           const pitch=el.querySelector('pitch');if(!pitch)return;
-          // a tied continuation is not a new attack
           const tieStop=!!el.querySelector('tie[type="stop"]');
           const tieStart=!!el.querySelector('tie[type="start"]');
-          if(tieStop&&!tieStart)return;
           const step=((pitch.querySelector('step')||{}).textContent||'C').trim();
           const alter=+((pitch.querySelector('alter')||{}).textContent||0);
           const oct=+((pitch.querySelector('octave')||{}).textContent||4);
@@ -1214,11 +1358,22 @@ function parseMusicXML(xmlText,fileName){
           const staffEl=el.querySelector('staff');
           const staffN=staffEl?+staffEl.textContent:null;
           const hand=staffN!=null?(staffN>=2?'L':'R'):(parts.length>1?(pi===0?'R':'L'):(midi<60?'L':'R'));
+          const tieKey=hand+':'+midi;
+          // a tied continuation is not a new attack — extend the note it continues
+          if(tieStop&&!tieStart){const open=tieOpen[tieKey];if(open)open.duration+=dur;delete tieOpen[tieKey];return;}
+          const fingEl=el.querySelector('technical fingering');
+          const finger=fingEl?parseInt(fingEl.textContent,10):null;
           const evs=measureMap[mi].events;
           let ev=evs.find(e=>e.hand===hand&&Math.abs(e.onset-at)<1e-6);
           if(!ev){ev={onset:at,duration:dur||1,midis:[],hand,fingerings:null};evs.push(ev);}
-          if(!ev.midis.includes(midi))ev.midis.push(midi);
+          if(pendingDyn){ev.dyn=pendingDyn;pendingDyn=null;}
+          const mIdx=ev.midis.indexOf(midi);
+          if(mIdx<0){
+            ev.midis.push(midi);
+            if(finger!=null&&!isNaN(finger)){if(!ev.xmlFingers)ev.xmlFingers={};ev.xmlFingers[midi]=finger;}
+          }
           ev.duration=Math.max(ev.duration,dur||1);
+          if(tieStart&&!tieStop)tieOpen[tieKey]=ev;
         }
       });
     });
@@ -1375,19 +1530,75 @@ function parseMIDI(buf,fileName){
 }
 
 // ——— Experimental optical music recognition ———
-// Honest MVP for clean, computer-engraved scans: staff systems come from horizontal
-// dark-pixel projection, noteheads from notehead-sized vertical dark runs clustered
-// into blobs. Rhythm is approximated as one beat per detected column. Formats with
-// exact note data (.musicxml / .mxl / .mid) are always the better path.
+// Multi-stage pipeline for printed scans: (1) grayscale + contrast normalization,
+// (2) Otsu adaptive thresholding (replaces the old fixed cutoff so faint/dark scans
+// both binarize well), (3) projection-profile deskew for slightly rotated pages, then
+// (4) staff-line detection, (5) 5-line staff grouping, (6) notehead-blob detection.
+// Rhythm is approximated as one beat per detected column. Formats with exact note data
+// (.musicxml / .mxl / .mid) are always the better path.
+
+// Otsu's method: the threshold that maximizes between-class variance of the histogram.
+function otsuThreshold(gray){
+  const hist=new Array(256).fill(0);
+  for(let i=0;i<gray.length;i++)hist[Math.max(0,Math.min(255,gray[i]|0))]++;
+  const total=gray.length;
+  let sumAll=0;for(let t=0;t<256;t++)sumAll+=t*hist[t];
+  let sumB=0,wB=0,best=0,thr=128;
+  for(let t=0;t<256;t++){
+    wB+=hist[t];if(!wB)continue;
+    const wF=total-wB;if(!wF)break;
+    sumB+=t*hist[t];
+    const mB=sumB/wB,mF=(sumAll-sumB)/wF;
+    const between=wB*wF*(mB-mF)*(mB-mF);
+    if(between>best){best=between;thr=t;}
+  }
+  return thr;
+}
+// Estimate page skew as the shear slope (dy/dx) that makes horizontal dark runs align
+// into the sharpest row-projection peaks (classic projection-profile deskew).
+function estimateSkew(gray,w,h,thr){
+  const step=Math.max(1,Math.floor(w/300)),ystep=Math.max(1,Math.floor(h/300));
+  let bestSlope=0,bestScore=-1;
+  for(let k=-8;k<=8;k++){
+    const slope=k*0.006;                       // up to ~±2.7°
+    const proj=new Float64Array(h);
+    for(let x=0;x<w;x+=step){
+      const shift=Math.round(x*slope);
+      for(let y=0;y<h;y+=ystep){
+        const yy=y+shift;if(yy<0||yy>=h)continue;
+        if(gray[yy*w+x]<thr)proj[y]++;
+      }
+    }
+    let score=0;for(let y=0;y<h;y++)score+=proj[y]*proj[y];
+    if(score>bestScore){bestScore=score;bestSlope=slope;}
+  }
+  return bestSlope;
+}
 function omrFromImageData(img){
   const {width:w,height:h,data}=img;
-  const gray=new Float32Array(w*h);
+  let gray=new Float32Array(w*h);
+  let lo=255,hi=0;
   for(let i=0;i<w*h;i++){
     const o=i*4,a=data[o+3]/255;
-    gray[i]=(data[o]*.299+data[o+1]*.587+data[o+2]*.114)*a+255*(1-a);
+    const g=(data[o]*.299+data[o+1]*.587+data[o+2]*.114)*a+255*(1-a);
+    gray[i]=g;if(g<lo)lo=g;if(g>hi)hi=g;
   }
-  let sum=0;for(let i=0;i<w*h;i++)sum+=gray[i];
-  const thr=Math.min(170,(sum/(w*h))*.62);
+  // contrast normalization: stretch the used range back to [0,255]
+  if(hi-lo>4&&hi-lo<250){const sc=255/(hi-lo);for(let i=0;i<w*h;i++)gray[i]=(gray[i]-lo)*sc;}
+  let thr=otsuThreshold(gray);
+  // deskew if the estimated shear is non-trivial
+  const slope=estimateSkew(gray,w,h,thr);
+  if(Math.abs(slope)>0.0005){
+    const g2=new Float32Array(w*h);
+    for(let x=0;x<w;x++){
+      const shift=Math.round(x*slope);
+      for(let y=0;y<h;y++){
+        const src=y+shift;
+        g2[y*w+x]=(src>=0&&src<h)?gray[src*w+x]:255;
+      }
+    }
+    gray=g2;thr=otsuThreshold(gray);
+  }
   const dark=i=>gray[i]<thr;
   // 1. candidate staff-line rows
   const rowCount=new Float32Array(h);
@@ -1530,6 +1741,263 @@ async function parseSheetPDF(file){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Measure Validation Engine
+// Bar-line arithmetic check: within each hand, the occupied span (max onset+duration)
+// of a measure should equal the meter's capacity in quarter beats. Overflowing notes
+// (that cross the barline) are flagged and, with autoCorrect, redistributed into the
+// following measure — a note straddling the line is split so its held remainder ties
+// over, and notes wholly past the line are moved. Notes are never dropped. Under-full
+// measures are reported ('short') but left alone, since they are usually just rests.
+// ═══════════════════════════════════════════════════════════════════════════
+function measureCapacity(timeSig){
+  timeSig=timeSig||{beats:4,beatType:4};
+  return (timeSig.beats||4)*4/(timeSig.beatType||4);
+}
+function handSpan(measure,hand){
+  let end=0,any=false;
+  measure.events.forEach(e=>{if(e.hand!==hand)return;any=true;end=Math.max(end,e.onset+e.duration);});
+  return any?end:null;
+}
+function validateMeasures(piece,opts){
+  opts=opts||{};
+  const autoCorrect=opts.autoCorrect!==false;
+  const cap=measureCapacity(piece.timeSig);
+  const EPS=1e-6,report=[],hands=['R','L'];
+  const measures=piece.measures;
+  for(let mi=0;mi<measures.length;mi++){
+    const m=measures[mi];
+    hands.forEach(hand=>{
+      const span=handSpan(m,hand);
+      if(span==null)return;
+      const entry={measure:mi+1,hand,capacity:+cap.toFixed(4),span:+span.toFixed(4),status:'ok',corrected:false};
+      if(span>cap+EPS){
+        entry.status='over';
+        if(autoCorrect){
+          const carry=[];
+          m.events.forEach(e=>{
+            if(e.hand!==hand)return;
+            if(e.onset>=cap-EPS){                              // wholly past the barline → move
+              carry.push({onset:+(e.onset-cap).toFixed(4),duration:e.duration,midis:[...e.midis],hand,fingerings:e.fingerings?[...e.fingerings]:null});
+              e._drop=true;
+            } else if(e.onset+e.duration>cap+EPS){             // straddles → clamp + tie remainder
+              const rem=+(e.onset+e.duration-cap).toFixed(4);
+              e.duration=+(cap-e.onset).toFixed(4);
+              carry.push({onset:0,duration:rem,midis:[...e.midis],hand,tie:true,fingerings:e.fingerings?[...e.fingerings]:null});
+            }
+          });
+          m.events=m.events.filter(e=>!e._drop);
+          if(carry.length){
+            if(mi+1>=measures.length)measures.push({number:measures.length+1,events:[]});
+            measures[mi+1].events.push(...carry);
+            entry.corrected=true;
+          }
+        }
+      } else if(span<cap-EPS){
+        entry.status='short';
+      }
+      report.push(entry);
+    });
+  }
+  measures.forEach((m,i)=>{
+    m.number=i+1;
+    m.events.sort((a,b)=>a.onset-b.onset||(a.hand===b.hand?0:a.hand==='R'?-1:1));
+  });
+  piece.validation={
+    capacity:+cap.toFixed(4),
+    measures:report,
+    overCount:report.filter(r=>r.status==='over').length,
+    correctedCount:report.filter(r=>r.corrected).length,
+    valid:report.every(r=>r.status!=='over'||r.corrected)
+  };
+  return piece.validation;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Export: piece → MusicXML / MIDI / PDF
+// The MusicXML and MIDI writers round-trip through the parsers above: onsets are
+// preserved by padding rests for gaps, hands map to staves/tracks, chords share an
+// onset. Durations are emitted verbatim so re-import reproduces the model.
+// ═══════════════════════════════════════════════════════════════════════════
+const XML_DIV=48;                       // divisions per quarter — covers 32nds, dots, triplets
+function durToType(d){
+  const table=[[4,'whole'],[2,'half'],[1,'quarter'],[.5,'eighth'],[.25,'16th'],[.125,'32nd']];
+  for(const[b,t]of table){
+    if(Math.abs(d-b)<1e-4)return{type:t,dots:0};
+    if(Math.abs(d-b*1.5)<1e-4)return{type:t,dots:1};
+  }
+  let best=table[2];for(const e of table)if(Math.abs(e[0]-d)<Math.abs(best[0]-d))best=e;
+  return{type:best[1],dots:0};
+}
+function midiToPitchXML(midi,fifths){
+  const names=(fifths||0)<0?FLAT_NAMES:NOTE_NAMES;
+  const pc=((midi%12)+12)%12,nm=names[pc];
+  const step=nm[0];
+  const alter=nm.length>1?(nm[1]==='#'?1:-1):0;
+  const octave=Math.floor(midi/12)-1;
+  return{step,alter,octave};
+}
+function noteXML(midi,dur,fifths,isChord,staff,finger){
+  const{step,alter,octave}=midiToPitchXML(midi,fifths);
+  const{type,dots}=durToType(dur);
+  let s='  <note>\n';
+  if(isChord)s+='   <chord/>\n';
+  s+=`   <pitch><step>${step}</step>${alter?`<alter>${alter}</alter>`:''}<octave>${octave}</octave></pitch>\n`;
+  s+=`   <duration>${Math.max(1,Math.round(dur*XML_DIV))}</duration>\n`;
+  s+=`   <type>${type}</type>\n`;
+  for(let i=0;i<dots;i++)s+='   <dot/>\n';
+  if(staff)s+=`   <staff>${staff}</staff>\n`;
+  if(finger!=null)s+=`   <notations><technical><fingering>${finger}</fingering></technical></notations>\n`;
+  s+='  </note>\n';
+  return s;
+}
+function restXML(dur,staff){
+  const{type}=durToType(dur);
+  return `  <note><rest/><duration>${Math.max(1,Math.round(dur*XML_DIV))}</duration><type>${type}</type>${staff?`<staff>${staff}</staff>`:''}</note>\n`;
+}
+function handEventsXML(measure,hand,cap,fifths,staff){
+  const evs=measure.events.filter(e=>e.hand===hand).sort((a,b)=>a.onset-b.onset);
+  let s='',pos=0;
+  evs.forEach(ev=>{
+    if(ev.onset>pos+1e-6)s+=restXML(ev.onset-pos,staff);   // pad the gap so onsets line up
+    const midis=[...ev.midis].sort((a,b)=>a-b);
+    midis.forEach((m,i)=>s+=noteXML(m,ev.duration,fifths,i>0,staff,ev.fingerings&&ev.fingerings[i]!=null?ev.fingerings[i]:null));
+    pos=Math.max(pos,ev.onset+ev.duration);
+  });
+  if(pos<cap-1e-6)s+=restXML(cap-pos,staff);
+  return s;
+}
+function pieceToMusicXML(piece){
+  const grand=pieceHasHand(piece,'L');
+  const fifths=(piece.keySig&&piece.keySig.fifths)||0;
+  const mode=(piece.keySig&&piece.keySig.mode)||'major';
+  const ts=piece.timeSig||{beats:4,beatType:4};
+  const cap=measureCapacity(ts);
+  const staves=grand?2:1;
+  let x='<?xml version="1.0" encoding="UTF-8"?>\n';
+  x+='<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n';
+  x+='<score-partwise version="3.1">\n';
+  x+=` <work><work-title>${escapeXML(piece.title||'Untitled')}</work-title></work>\n`;
+  if(piece.composer)x+=` <identification><creator type="composer">${escapeXML(piece.composer)}</creator></identification>\n`;
+  x+=' <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>\n';
+  x+=' <part id="P1">\n';
+  piece.measures.forEach((m,mi)=>{
+    x+=`  <measure number="${mi+1}">\n`;
+    if(mi===0){
+      x+='   <attributes>\n';
+      x+=`    <divisions>${XML_DIV}</divisions>\n`;
+      x+=`    <key><fifths>${fifths}</fifths><mode>${mode}</mode></key>\n`;
+      x+=`    <time><beats>${ts.beats}</beats><beat-type>${ts.beatType}</beat-type></time>\n`;
+      x+=`    <staves>${staves}</staves>\n`;
+      x+='    <clef number="1"><sign>G</sign><line>2</line></clef>\n';
+      if(grand)x+='    <clef number="2"><sign>F</sign><line>4</line></clef>\n';
+      x+='   </attributes>\n';
+      if(piece.tempo)x+=`   <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${piece.tempo}</per-minute></metronome></direction-type><sound tempo="${piece.tempo}"/></direction>\n`;
+    }
+    x+=handEventsXML(m,'R',cap,fifths,grand?1:null);
+    if(grand){
+      x+=`   <backup><duration>${Math.round(cap*XML_DIV)}</duration></backup>\n`;
+      x+=handEventsXML(m,'L',cap,fifths,2);
+    }
+    x+='  </measure>\n';
+  });
+  x+=' </part>\n</score-partwise>\n';
+  return x;
+}
+function escapeXML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
+
+// Standard MIDI File (format 1): a tempo/meta track plus one track per hand.
+function pieceToMIDI(piece){
+  const PPQ=480;
+  const ts=piece.timeSig||{beats:4,beatType:4};
+  const cap=measureCapacity(ts);
+  const bytes=[];
+  const push=(...b)=>bytes.push(...b);
+  const vlq=n=>{const b=[n&0x7f];while(n=Math.floor(n/128))b.unshift((n&0x7f)|0x80);return b;};
+  const str=s=>[...s].map(c=>c.charCodeAt(0));
+  const u16=v=>[(v>>8)&255,v&255];
+  const u32=v=>[(v>>24)&255,(v>>16)&255,(v>>8)&255,v&255];
+  const trackChunk=evBytes=>[...str('MTrk'),...u32(evBytes.length),...evBytes];
+  // meta track
+  const meta=[];
+  const bpm=piece.tempo||90,mpq=Math.round(60000000/bpm);
+  meta.push(0,0xff,0x51,3,(mpq>>16)&255,(mpq>>8)&255,mpq&255);
+  const beatType=ts.beatType,dd=Math.round(Math.log2(beatType));
+  meta.push(0,0xff,0x58,4,ts.beats,dd,24,8);
+  const fifths=(piece.keySig&&piece.keySig.fifths)||0;
+  meta.push(0,0xff,0x59,2,fifths&255,(piece.keySig&&piece.keySig.mode==='minor')?1:0);
+  meta.push(0,0xff,0x2f,0);
+  // one track per hand present
+  const handTrack=hand=>{
+    const on=[];
+    piece.measures.forEach((m,mi)=>{
+      m.events.forEach(ev=>{
+        if(ev.hand!==hand)return;
+        const startBeat=mi*cap+ev.onset;
+        ev.midis.forEach(midi=>{
+          on.push({tick:Math.round(startBeat*PPQ),type:'on',midi});
+          on.push({tick:Math.round((startBeat+ev.duration)*PPQ),type:'off',midi});
+        });
+      });
+    });
+    on.sort((a,b)=>a.tick-b.tick||(a.type==='off'?-1:1));
+    const evb=[];let last=0;
+    on.forEach(e=>{
+      const delta=e.tick-last;last=e.tick;
+      evb.push(...vlq(delta),e.type==='on'?0x90:0x80,e.midi,e.type==='on'?80:0);
+    });
+    evb.push(0,0xff,0x2f,0);
+    return evb;
+  };
+  const hands=[];
+  if(pieceHasHand(piece,'R'))hands.push('R');
+  if(pieceHasHand(piece,'L'))hands.push('L');
+  if(!hands.length)hands.push('R');
+  const ntrk=1+hands.length;
+  push(...str('MThd'),...u32(6),...u16(1),...u16(ntrk),...u16(PPQ));
+  push(...trackChunk(meta));
+  hands.forEach(h=>push(...trackChunk(handTrack(h))));
+  return new Uint8Array(bytes);
+}
+
+// Minimal single-page PDF wrapping a rendered JPEG of the score (DCTDecode XObject).
+function pieceToPDF(piece,opts){
+  opts=opts||{};
+  const img=renderPieceToImage(piece,opts.width||1000);
+  const b64=img.dataUrl.split(',')[1];
+  const bin=atob(b64);
+  const imgBytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)imgBytes[i]=bin.charCodeAt(i);
+  const iw=img.w,ih=img.h;
+  const enc=new TextEncoder();
+  const chunks=[];const offsets=[];let pos=0;
+  const put=s=>{const b=typeof s==='string'?enc.encode(s):s;chunks.push(b);pos+=b.length;};
+  const obj=(n,body)=>{offsets[n]=pos;put(`${n} 0 obj\n`);put(body);put('\nendobj\n');};
+  put('%PDF-1.4\n');
+  const pw=612,ph=Math.round(pw*ih/iw)+40;
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>`);
+  const draww=pw-40,drawh=Math.round(draww*ih/iw);
+  const content=`q ${draww} 0 0 ${drawh} 20 ${ph-drawh-20} cm /Im0 Do Q`;
+  obj(4,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  // image object (stream needs raw bytes)
+  offsets[5]=pos;
+  put(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`);
+  put(imgBytes);
+  put('\nendstream\nendobj\n');
+  const xrefStart=pos;
+  const n=6;
+  put(`xref\n0 ${n}\n`);
+  put('0000000000 65535 f \n');
+  for(let i=1;i<n;i++)put(String(offsets[i]).padStart(10,'0')+' 00000 n \n');
+  put(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
+  const total=chunks.reduce((s,c)=>s+c.length,0);
+  const out=new Uint8Array(total);let o=0;
+  chunks.forEach(c=>{out.set(c,o);o+=c.length;});
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Piece library: import, persistence, list & detail UI
 // ═══════════════════════════════════════════════════════════════════════════
 function allPieceMidis(piece){
@@ -1551,6 +2019,7 @@ function importPieceObject(p,fileName){
   p.timeSig=p.timeSig||{beats:4,beatType:4};
   p.tempo=p.tempo||90;
   if(!p.keySig)p.keySig=detectKey(midis);   // infer when the upload didn't specify one
+  validateMeasures(p,{autoCorrect:true});   // bar-line arithmetic: flag/repair overflows
   annotateFingerings(p);
   p.importedAt=Date.now();
   pieces=pieces.filter(x=>x.id!==p.id);
@@ -1602,7 +2071,9 @@ async function importPieceFile(file){
     else if(ext==='pdf')piece=await parseSheetPDF(file);
     else throw new Error('unsupported file type .'+ext);
     const imported=importPieceObject(piece,file.name);
-    setImportStatus(`imported “${imported.title}” · ${imported.measures.length} measures · key ${imported.keySig.name}${imported.approx?' · ⚠ optical read — notes approximate, rhythm assumed':''}`);
+    const v=imported.validation;
+    const vMsg=v&&v.correctedCount?` · ✓ ${v.correctedCount} measure${v.correctedCount>1?'s':''} auto-corrected (barline overflow)`:'';
+    setImportStatus(`imported “${imported.title}” · ${imported.measures.length} measures · key ${imported.keySig.name}${vMsg}${imported.approx?' · ⚠ optical read — notes approximate, rhythm assumed':''}`);
     return imported;
   }catch(e){
     setImportStatus('import failed: '+(e&&e.message||e),'err');
@@ -2408,6 +2879,520 @@ function startRhythmMode(){
 // ——— Builder ———
 const ALL_NOTE_NAMES2=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Interactive score editor & creation tool
+// A reusable multi-line renderer (renderScore) draws every measure with hit-boxes,
+// and an undo/redo-backed state machine (ED) mutates a live piece from a notation
+// palette + direct staff interaction. Also drives blank-score authoring and export.
+// ═══════════════════════════════════════════════════════════════════════════
+function scoreStaffType(piece){
+  if(piece.staffType)return piece.staffType;
+  if(pieceIsGrand(piece))return 'grand';
+  if(pieceHasHand(piece,'L')&&!pieceHasHand(piece,'R'))return 'bass';
+  return 'treble';
+}
+const REST_GLYPH={4:'𝄻',2:'𝄼',1:'𝄽',0.5:'𝄾',0.25:'𝄿',0.125:'𝄿'};
+function nearestRestGlyph(d){
+  let best=1,bd=1e9;for(const k in REST_GLYPH){const v=+k;if(Math.abs(v-d)<bd){bd=Math.abs(v-d);best=v;}}
+  return REST_GLYPH[best];
+}
+function diatonicNudge(midi,dir){return staffPosToMidi(midiToStaffPos(midi)+dir);}
+
+// Draw an entire piece across wrapped staff lines. Returns a layout descriptor with
+// per-line geometry, per-measure boxes, and per-notehead hit points for interaction.
+function renderScore(canvas,piece,W,opts){
+  opts=opts||{};
+  const print=!!opts.print;
+  const colors=getColors();
+  const ink=print?'#141414':colors.ink, ink2=print?'#555':colors.ink2, ink3=print?'#888':colors.ink3;
+  const bg=print?'#ffffff':colors.bg, green=colors.green, greenLight=colors.greenLight;
+  const st=scoreStaffType(piece);
+  const grand=st==='grand', topIsBass=st==='bass';
+  const lg=opts.lg||(grand?15:18);
+  const fifths=(piece.keySig&&piece.keySig.fifths)||0;
+  const scalePcs=keyScalePcs(fifths);
+  const ts=piece.timeSig||{beats:4,beatType:4};
+  const cap=measureCapacity(ts);
+  const bassGap=grand?lg*10:0;
+  const systemH=bassGap+4*lg;                        // top staff line → bottom staff line
+  const padTop=lg*4.5, padBot=lg*4.5, lineGap=lg*3.5;
+  const keysigW=Math.abs(fifths)*lg*0.72+(fifths?lg*0.6:0);
+  const headW=Math.round(56+keysigW+lg*2.2);
+  // measure widths from distinct onset count
+  const slotsOf=piece.measures.map(m=>{
+    const s=new Set();m.events.forEach(e=>s.add(e.onset.toFixed(4)));
+    return Math.max(1,s.size);
+  });
+  const noteSpace=lg*3.0;
+  const mW=i=>Math.max(lg*9,slotsOf[i]*noteSpace+lg*2.4);
+  // pack measures into lines
+  const lines=[];let cur=null,x=headW;
+  for(let i=0;i<piece.measures.length;i++){
+    const w=mW(i);
+    if(!cur){cur={start:i,items:[]};}
+    if(cur.items.length&&x+w>W-14){lines.push(cur);cur={start:i,items:[]};x=headW;}
+    cur.items.push({mi:i,x,w});x+=w;
+  }
+  if(cur&&cur.items.length)lines.push(cur);
+  if(!lines.length)lines.push({start:0,items:[]});
+  const lineBlockH=systemH+padBot+lineGap;
+  const H=Math.round(padTop+lines.length*lineBlockH+padBot);
+  const ctx=setupHiDPICanvas(canvas,W,H);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  const layout={lg,grand,topIsBass,cap,noteSpace,headW,W,H,lines:[],events:[]};
+
+  const noteX=(mx,wM,onset)=>mx+lg*1.5+(onset/cap)*(wM-lg*3.0);
+
+  lines.forEach((L,li)=>{
+    const tTop=Math.round(padTop+li*lineBlockH);
+    const bTop=grand?tTop+bassGap:null;
+    const staffBottom=(grand?bTop:tTop)+4*lg;
+    const lineRec={li,tTop,bTop,staffBottom,topIsBass,measures:[]};
+    // staves + clefs
+    drawLines(ctx,W,tTop,lg,ink);
+    ctx.fillStyle=ink;ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    if(grand){
+      drawLines(ctx,W,bTop,lg,ink);
+      ctx.font=`${lg*5.5}px serif`;ctx.fillText('𝄞',10,tTop+lg*5.2);
+      ctx.font=`${lg*4.5}px serif`;ctx.fillText('𝄢',10,bTop+lg*4.8);
+      ctx.lineWidth=1.5;ctx.strokeStyle=ink;
+      ctx.beginPath();ctx.moveTo(54,tTop);ctx.lineTo(54,staffBottom);ctx.stroke();
+    } else {
+      ctx.font=`${lg*5.2}px serif`;
+      ctx.fillText(topIsBass?'𝄢':'𝄞',10,topIsBass?tTop+lg*4.8:tTop+lg*5.2);
+    }
+    let sigEnd=drawKeySignature(ctx,fifths,58,tTop,lg,topIsBass,ink);
+    if(grand)sigEnd=Math.max(sigEnd,drawKeySignature(ctx,fifths,58,bTop,lg,true,ink));
+    // time signature only on the first line
+    if(li===0){
+      ctx.fillStyle=ink;ctx.font=`bold ${Math.round(lg*2.0)}px serif`;ctx.textAlign='center';
+      const tsX=Math.max(sigEnd,58)+lg*0.9;
+      ctx.fillText(String(ts.beats),tsX,tTop+lg*1.7);
+      ctx.fillText(String(ts.beatType),tsX,tTop+lg*3.8);
+      if(grand){ctx.fillText(String(ts.beats),tsX,bTop+lg*1.7);ctx.fillText(String(ts.beatType),tsX,bTop+lg*3.8);}
+      ctx.textAlign='left';
+    }
+    L.items.forEach(it=>{
+      const meas=piece.measures[it.mi],mx=it.x,wM=it.w;
+      lineRec.measures.push({mi:it.mi,x0:mx,x1:mx+wM,w:wM});
+      // measure number
+      ctx.fillStyle=ink3;ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
+      ctx.fillText(String(it.mi+1),mx+2,tTop-lg*1.5);
+      // barline
+      ctx.strokeStyle=ink2;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(mx+wM-lg*0.5,tTop);ctx.lineTo(mx+wM-lg*0.5,staffBottom);ctx.stroke();
+      // implied rests: per hand, mark gaps (editor view only)
+      if(opts.showRests){
+        ['R','L'].forEach(hand=>{
+          if(!grand&&((hand==='L')!==topIsBass))return;
+          const top=(grand&&hand==='L')?bTop:tTop;
+          const evs=meas.events.filter(e=>e.hand===hand).sort((a,b)=>a.onset-b.onset);
+          let pos=0;
+          const drawRest=(o,d)=>{ctx.fillStyle=ink3;ctx.font=`${Math.round(lg*1.8)}px serif`;ctx.textAlign='center';ctx.fillText(nearestRestGlyph(d),noteX(mx,wM,o+d/2),top+lg*2.2);ctx.textAlign='left';};
+          evs.forEach(e=>{if(e.onset>pos+1e-4)drawRest(pos,e.onset-pos);pos=Math.max(pos,e.onset+e.duration);});
+          if(pos<cap-1e-4&&(evs.length||!grand))drawRest(pos,cap-pos);
+        });
+      }
+      // events
+      meas.events.forEach(ev=>{
+        const isBass=grand?ev.hand==='L':topIsBass;
+        const top=(grand&&ev.hand==='L')?bTop:tTop;
+        const ex=noteX(mx,wM,ev.onset);
+        const selHit=opts.sel&&opts.sel.mi===it.mi&&opts.sel.hand===ev.hand&&Math.abs(opts.sel.onset-ev.onset)<1e-6;
+        if(selHit){ctx.fillStyle=greenLight;ctx.globalAlpha=.6;ctx.fillRect(ex-lg*0.9,top-lg*2.2,lg*1.8,4*lg+lg*4.2);ctx.globalAlpha=1;}
+        if(ev.rest||!ev.midis.length){
+          ctx.fillStyle=selHit?green:ink;ctx.font=`${Math.round(lg*1.9)}px serif`;ctx.textAlign='center';
+          ctx.fillText(nearestRestGlyph(ev.duration),ex,top+lg*2.2);ctx.textAlign='left';
+        } else {
+          const heads=[];
+          ev.midis.forEach(mm=>{
+            const perNote={noAccidental:scalePcs.includes(((mm%12)+12)%12),open:ev.duration>=2,noStem:ev.duration>=4};
+            drawNote(ctx,mm,ex,top,lg,selHit?green:ink,selHit?green:ink,true,isBass,perNote);
+            heads.push({midi:mm,x:ex,y:noteY(mm,top,lg,isBass)});
+          });
+          layout.events.push({mi:it.mi,hand:ev.hand,onset:ev.onset,duration:ev.duration,x:ex,top,isBass,heads,dyn:ev.dyn});
+          // fingerings
+          if(ev.fingerings&&ev.fingerings.length){
+            const sorted=[...ev.midis].sort((a,b)=>a-b);
+            const items=sorted.map((mm,i)=>({midi:mm,f:ev.fingerings[i],y:noteY(mm,top,lg,isBass)})).filter(i=>i.f!=null);
+            if(items.length){
+              const above=ev.hand==='R';
+              const edgeY=above?top-lg*1.0:top+4*lg+lg*1.0;
+              drawFingeringStack(ctx,items,ex,lg,above,edgeY,ink2,bg);
+            }
+          }
+          // dynamic marking
+          if(ev.dyn){ctx.fillStyle=ink2;ctx.font=`italic bold ${Math.round(lg*1.15)}px serif`;ctx.textAlign='center';ctx.fillText(ev.dyn,ex,(grand?bTop:tTop)+4*lg+lg*2.6);ctx.textAlign='left';}
+        }
+      });
+    });
+    layout.lines.push(lineRec);
+  });
+  // title / composer header for print
+  if(print){
+    ctx.fillStyle=ink;ctx.textAlign='center';
+    ctx.font=`bold ${Math.round(lg*1.6)}px Georgia,serif`;ctx.fillText(piece.title||'Untitled',W/2,lg*2.2);
+    if(piece.composer){ctx.font=`italic ${Math.round(lg*1.05)}px Georgia,serif`;ctx.fillText(piece.composer,W-16,lg*3.6);}
+    ctx.textAlign='left';
+  }
+  return layout;
+}
+
+// Render a piece to an offscreen JPEG for PDF/preview export.
+function renderPieceToImage(piece,width){
+  width=width||1000;
+  const cv=document.createElement('canvas');
+  const layout=renderScore(cv,piece,width,{print:true,lg:16,showRests:true});
+  const dpr=window.devicePixelRatio||1;
+  return {dataUrl:cv.toDataURL('image/jpeg',0.9),w:cv.width/dpr|0||width,h:cv.height/dpr|0};
+}
+
+// ——— Editor state machine ———
+const ED={piece:null,history:[],hi:-1,sel:null,layout:null,
+  tool:{dur:1,dot:false,acc:0,kind:'note'}};
+function edClone(p){return JSON.parse(JSON.stringify(p));}
+function edEffDur(){return ED.tool.dur*(ED.tool.dot?1.5:1);}
+function edAnnotate(){
+  ED.piece.measures.forEach(m=>m.events.forEach(e=>{if(!e.manual)e.fingerings=null;}));
+  annotateFingerings(ED.piece);
+}
+function edCommit(){
+  edAnnotate();
+  ED.history=ED.history.slice(0,ED.hi+1);
+  ED.history.push(edClone(ED.piece));
+  ED.hi=ED.history.length-1;
+  if(ED.history.length>300){ED.history.shift();ED.hi--;}
+  edRender();
+}
+function edRestore(){
+  ED.piece=edClone(ED.history[ED.hi]);
+  ED.sel=null;edRender();
+}
+function editorUndo(){if(ED.hi>0){ED.hi--;edRestore();}}
+function editorRedo(){if(ED.hi<ED.history.length-1){ED.hi++;edRestore();}}
+function editorCanUndo(){return ED.hi>0;}
+function editorCanRedo(){return ED.hi<ED.history.length-1;}
+
+function editorNewScore(o){
+  o=o||{};
+  const n=Math.max(1,o.measures||4);
+  const measures=[];for(let i=0;i<n;i++)measures.push({number:i+1,events:[]});
+  ED.piece={
+    id:o.id||'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    title:(o.title||'Untitled Score'),composer:o.composer||'',source:'editor',
+    staffType:o.staffType||'grand',
+    keySig:Object.assign(keyFromFifths(o.fifths||0,o.mode||'major'),{detected:false}),
+    timeSig:{beats:o.beats||4,beatType:o.beatType||4},
+    tempo:o.tempo||90,measures
+  };
+  ED.sel=null;ED.history=[];ED.hi=-1;
+  edCommit();edSyncControls();
+  return ED.piece;
+}
+function editorLoadPiece(id){
+  const src=pieces.find(p=>p.id===id);if(!src)return null;
+  ED.piece=edClone(src);
+  ED.piece.staffType=scoreStaffType(ED.piece);
+  ED.sel=null;ED.history=[];ED.hi=-1;
+  edCommit();edSyncControls();
+  showTab('editor');
+  return ED.piece;
+}
+function edFindEvent(sel){
+  if(!sel||!ED.piece)return null;
+  const m=ED.piece.measures[sel.mi];if(!m)return null;
+  return m.events.find(e=>e.hand===sel.hand&&Math.abs(e.onset-sel.onset)<1e-6)||null;
+}
+function editorPlaceNote(mi,hand,onset,midi,dur,rest){
+  const m=ED.piece.measures[mi];if(!m)return null;
+  let ev=m.events.find(e=>e.hand===hand&&Math.abs(e.onset-onset)<1e-6);
+  if(rest){
+    if(ev)m.events=m.events.filter(e=>e!==ev);
+    ev={onset,duration:dur,midis:[],hand,rest:true,fingerings:null};
+    m.events.push(ev);
+  } else {
+    if(!ev){ev={onset,duration:dur,midis:[],hand,fingerings:null};m.events.push(ev);}
+    ev.rest=false;
+    if(!ev.midis.includes(midi))ev.midis.push(midi);
+    ev.midis.sort((a,b)=>a-b);
+    ev.duration=dur;
+  }
+  ED.sel={mi,hand,onset};
+  // auto-expand: keep one empty trailing measure available
+  const last=ED.piece.measures[ED.piece.measures.length-1];
+  if(last.events.length)ED.piece.measures.push({number:ED.piece.measures.length+1,events:[]});
+  edCommit();
+  return ev;
+}
+function editorDeleteSelected(){
+  const ev=edFindEvent(ED.sel);if(!ev)return;
+  const m=ED.piece.measures[ED.sel.mi];
+  m.events=m.events.filter(e=>e!==ev);
+  ED.sel=null;edCommit();
+}
+function editorNudgePitch(dir){
+  const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
+  ev.midis=ev.midis.map(m=>diatonicNudge(m,dir)).sort((a,b)=>a-b);
+  ev.manual=false;edCommit();
+}
+function editorSetDuration(dur){
+  const ev=edFindEvent(ED.sel);if(!ev)return;
+  ev.duration=dur;edCommit();
+}
+function editorApplyAccidental(acc){
+  const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
+  // acc: relative semitone shift applied to the diatonic pitch of each notehead
+  ev.midis=ev.midis.map(m=>staffPosToMidi(midiToStaffPos(m))+acc).sort((a,b)=>a-b);
+  edCommit();
+}
+function editorSetFingering(finger){
+  const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
+  const sorted=[...ev.midis].sort((a,b)=>a-b);
+  ev.fingerings=sorted.map(()=>finger);
+  ev.manual=true;edCommit();
+}
+function editorSetDynamic(dyn){
+  const ev=edFindEvent(ED.sel);if(!ev)return;
+  ev.dyn=dyn||undefined;edCommit();
+}
+function editorAddMeasure(){ED.piece.measures.push({number:ED.piece.measures.length+1,events:[]});edCommit();}
+function editorRemoveMeasure(mi){
+  if(ED.piece.measures.length<=1)return;
+  mi=mi==null?(ED.sel?ED.sel.mi:ED.piece.measures.length-1):mi;
+  ED.piece.measures.splice(mi,1);
+  ED.piece.measures.forEach((m,i)=>m.number=i+1);
+  ED.sel=null;edCommit();
+}
+function editorSetKey(fifths,mode){ED.piece.keySig=Object.assign(keyFromFifths(fifths,mode||'major'),{detected:false});edCommit();}
+function editorSetTime(beats,beatType){ED.piece.timeSig={beats,beatType};validateMeasures(ED.piece,{autoCorrect:false});edCommit();}
+function editorSetTempo(t){ED.piece.tempo=Math.max(20,Math.min(300,t|0));edCommit();}
+function editorSetStaffType(t){ED.piece.staffType=t;edCommit();}
+function editorSetTitle(t){if(!ED.piece)return;ED.piece.title=t||'Untitled Score';edRender();}
+function editorSetComposer(c){if(!ED.piece)return;ED.piece.composer=c||'';edRender();}
+function edKeyOptionsHTML(){
+  let h='';
+  for(let f=-7;f<=7;f++){const k=keyFromFifths(f,'major');h+=`<option value="${f}:major">${k.name}</option>`;}
+  for(let f=-7;f<=7;f++){const k=keyFromFifths(f,'minor');h+=`<option value="${f}:minor">${k.name}</option>`;}
+  return h;
+}
+function edSyncControls(){
+  if(!ED.piece)return;
+  const g=id=>document.getElementById(id);
+  const p=ED.piece;
+  if(g('edTitleInput'))g('edTitleInput').value=p.title;
+  if(g('edComposerInput'))g('edComposerInput').value=p.composer||'';
+  if(g('edStaffSel'))g('edStaffSel').value=scoreStaffType(p);
+  if(g('edTempoInput'))g('edTempoInput').value=p.tempo;
+  if(g('edKeySel'))g('edKeySel').value=((p.keySig&&p.keySig.fifths)||0)+':'+((p.keySig&&p.keySig.mode)||'major');
+  if(g('edTimeSel'))g('edTimeSel').value=p.timeSig.beats+'/'+p.timeSig.beatType;
+}
+
+function editorCleanCopy(){
+  const p=edClone(ED.piece);
+  while(p.measures.length>1&&!p.measures[p.measures.length-1].events.length)p.measures.pop();
+  p.measures.forEach((m,i)=>m.number=i+1);
+  return p;
+}
+function editorSaveToLibrary(){
+  const p=editorCleanCopy();
+  if(!allPieceMidis(p).length){setEditorStatus('add some notes before saving','err');return null;}
+  const saved=importPieceObject(p,p.title);
+  setEditorStatus(`saved “${saved.title}” to your library`);
+  return saved;
+}
+function _download(bytesOrStr,name,mime){
+  const blob=bytesOrStr instanceof Uint8Array?new Blob([bytesOrStr],{type:mime}):new Blob([bytesOrStr],{type:mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},0);
+}
+function editorExport(fmt){
+  const p=editorCleanCopy();
+  if(!allPieceMidis(p).length){setEditorStatus('nothing to export yet','err');return;}
+  const base=(p.title||'score').replace(/[^\w\- ]+/g,'').trim()||'score';
+  try{
+    if(fmt==='musicxml')_download(pieceToMusicXML(p),base+'.musicxml','application/vnd.recordare.musicxml+xml');
+    else if(fmt==='midi')_download(pieceToMIDI(p),base+'.mid','audio/midi');
+    else if(fmt==='pdf')_download(pieceToPDF(p),base+'.pdf','application/pdf');
+    setEditorStatus(`exported ${base}.${fmt==='midi'?'mid':fmt}`);
+  }catch(e){setEditorStatus('export failed: '+(e&&e.message||e),'err');}
+}
+let _edPlayTimers=[];
+function editorStopPlayback(){_edPlayTimers.forEach(t=>clearTimeout(t));_edPlayTimers=[];}
+function editorPlay(){
+  editorStopPlayback();
+  const p=ED.piece;const cap=measureCapacity(p.timeSig);
+  const spb=60000/(p.tempo||90);          // ms per quarter beat
+  const flat=[];
+  p.measures.forEach((m,mi)=>m.events.forEach(ev=>{if(!ev.rest&&ev.midis.length)flat.push({t:(mi*cap+ev.onset)*spb,midis:ev.midis});}));
+  flat.sort((a,b)=>a.t-b.t);
+  flat.forEach(n=>_edPlayTimers.push(setTimeout(()=>playNotes(n.midis),n.t)));
+}
+function editorSaveAndPractice(){
+  const saved=editorSaveToLibrary();
+  if(saved){showTab('pieces');selectPiece(saved.id);startPiecePractice(saved.id,{hand:'both'});}
+}
+
+// ——— Editor rendering + interaction ———
+function setEditorStatus(msg,cls){
+  const el=document.getElementById('editorStatus');if(!el)return;
+  el.textContent=msg||'';el.style.color=cls==='err'?'var(--red)':'';
+}
+function edRender(){
+  const canvas=document.getElementById('editorCanvas');
+  if(!canvas||!ED.piece)return;
+  const wrap=canvas.parentElement;
+  const W=Math.max(560,(wrap&&wrap.clientWidth)||800);
+  ED.layout=renderScore(canvas,ED.piece,W,{editor:true,showRests:true,sel:ED.sel});
+  edUpdateChrome();
+}
+function edUpdateChrome(){
+  const u=document.getElementById('edUndoBtn'),r=document.getElementById('edRedoBtn');
+  if(u)u.disabled=!editorCanUndo();
+  if(r)r.disabled=!editorCanRedo();
+  const info=document.getElementById('editorInfo');
+  if(info&&ED.piece){
+    const p=ED.piece,notes=allPieceMidis(p).length;
+    info.textContent=`${p.title} · ${p.keySig.name} · ${p.timeSig.beats}/${p.timeSig.beatType} · ♩=${p.tempo} · ${p.measures.length} measures · ${notes} notes`;
+  }
+  document.querySelectorAll('#durPalette .pal').forEach(b=>b.classList.toggle('sel',+b.dataset.dur===ED.tool.dur));
+  const dotBtn=document.getElementById('edDotBtn');if(dotBtn)dotBtn.classList.toggle('sel',ED.tool.dot);
+  document.querySelectorAll('#accPalette .pal').forEach(b=>b.classList.toggle('sel',+b.dataset.acc===ED.tool.acc&&ED.tool.kind==='note'));
+  const restBtn=document.getElementById('edRestBtn');if(restBtn)restBtn.classList.toggle('sel',ED.tool.kind==='rest');
+}
+function edSetDurTool(d){ED.tool.dur=d;if(ED.sel)editorSetDuration(edEffDur());else edUpdateChrome();}
+function edToggleDot(){ED.tool.dot=!ED.tool.dot;if(ED.sel)editorSetDuration(edEffDur());else edUpdateChrome();}
+function edSetAccTool(a){ED.tool.acc=a;ED.tool.kind='note';if(ED.sel)editorApplyAccidental(a);else edUpdateChrome();}
+function edSetRestTool(){ED.tool.kind=ED.tool.kind==='rest'?'note':'rest';edUpdateChrome();}
+function edSetFingerTool(f){if(ED.sel)editorSetFingering(f);else setEditorStatus('select a note first, then tap a finger number');}
+function edSetDynTool(d){if(ED.sel)editorSetDynamic(d);else setEditorStatus('select a note first, then tap a dynamic');}
+
+function edCanvasPoint(e){
+  const cv=document.getElementById('editorCanvas');
+  const rect=cv.getBoundingClientRect();
+  const src=e.touches?e.touches[0]:e;
+  return {x:src.clientX-rect.left,y:src.clientY-rect.top};
+}
+function edHitNote(pt){
+  const L=ED.layout;if(!L)return null;
+  const R=L.lg*0.8;let best=null,bd=R*R;
+  L.events.forEach(ev=>ev.heads.forEach(hd=>{
+    const dx=pt.x-hd.x,dy=pt.y-hd.y,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best=ev;}
+  }));
+  return best;
+}
+function edStaffAt(pt){
+  const L=ED.layout;if(!L)return null;
+  for(const ln of L.lines){
+    const bandTop=ln.tTop-L.lg*3,bandBot=ln.staffBottom+L.lg*3;
+    if(pt.y<bandTop||pt.y>bandBot)continue;
+    // choose staff/hand
+    let hand,top,isBass;
+    if(L.grand){
+      const mid=(ln.tTop+4*L.lg+ln.bTop)/2;
+      if(pt.y<mid){hand='R';top=ln.tTop;isBass=false;}else{hand='L';top=ln.bTop;isBass=true;}
+    } else {hand=ln.topIsBass?'L':'R';top=ln.tTop;isBass=ln.topIsBass;}
+    // measure by x
+    const mbox=ln.measures.find(mb=>pt.x>=mb.x0&&pt.x<mb.x1)||ln.measures[ln.measures.length-1];
+    if(!mbox)return null;
+    // pitch from y (snap to nearest staff position)
+    const refMidi=isBass?43:64;
+    const steps=Math.round((top+4*L.lg-pt.y)/(L.lg/2));
+    const midi=staffPosToMidi(midiToStaffPos(refMidi)+steps);
+    // onset from x
+    const frac=(pt.x-mbox.x0-L.lg*1.5)/Math.max(1,(mbox.w-L.lg*3.0));
+    const dur=edEffDur();
+    let beat=Math.max(0,Math.min(1,frac))*L.cap;
+    let onset=Math.round(beat/dur)*dur;
+    onset=Math.max(0,Math.min(Math.max(0,L.cap-dur),onset));
+    if(dur>L.cap)onset=0;
+    return {mi:mbox.mi,hand,onset,midi,dur,top,isBass};
+  }
+  return null;
+}
+function edMouseDown(e){
+  if(!ED.piece)return;
+  const pt=edCanvasPoint(e);
+  const hit=edHitNote(pt);
+  if(hit){
+    ED.sel={mi:hit.mi,hand:hit.hand,onset:hit.onset};
+    ED.drag={sel:ED.sel,startY:pt.y,moved:false};
+    edRender();
+    e.preventDefault();return;
+  }
+  const s=edStaffAt(pt);
+  if(s){
+    if(ED.tool.kind==='rest')editorPlaceNote(s.mi,s.hand,s.onset,null,s.dur,true);
+    else{
+      let midi=s.midi;
+      // apply diatonic-based accidental: snap to natural then shift
+      midi=staffPosToMidi(midiToStaffPos(midi))+ED.tool.acc;
+      editorPlaceNote(s.mi,s.hand,s.onset,midi,s.dur,false);
+    }
+  } else {ED.sel=null;edRender();}
+}
+function edMouseMove(e){
+  if(!ED.drag)return;
+  const pt=edCanvasPoint(e);
+  const dy=pt.y-ED.drag.startY;
+  if(Math.abs(dy)>=ED.layout.lg/2){
+    const steps=-Math.round(dy/(ED.layout.lg/2));
+    if(steps){
+      ED.sel=ED.drag.sel;editorNudgePitch(steps);
+      ED.drag.startY=pt.y;ED.drag.sel=ED.sel;ED.drag.moved=true;
+    }
+  }
+  e.preventDefault();
+}
+function edMouseUp(){ED.drag=null;}
+function edKeyDown(e){
+  if(document.getElementById('tab-editor')&&!document.getElementById('tab-editor').classList.contains('active'))return;
+  if(/input|textarea|select/i.test((e.target.tagName||'')))return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?editorRedo():editorUndo();return;}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();editorRedo();return;}
+  if(!ED.sel)return;
+  if(e.key==='ArrowUp'){e.preventDefault();editorNudgePitch(1);}
+  else if(e.key==='ArrowDown'){e.preventDefault();editorNudgePitch(-1);}
+  else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();editorDeleteSelected();}
+}
+function initEditor(){
+  const cv=document.getElementById('editorCanvas');
+  if(!cv)return;
+  const ks=document.getElementById('edKeySel'),wk=document.getElementById('wizKey');
+  if(ks)ks.innerHTML=edKeyOptionsHTML();
+  if(wk)wk.innerHTML=edKeyOptionsHTML();
+  cv.addEventListener('mousedown',edMouseDown);
+  window.addEventListener('mousemove',edMouseMove);
+  window.addEventListener('mouseup',edMouseUp);
+  cv.addEventListener('touchstart',edMouseDown,{passive:false});
+  cv.addEventListener('touchmove',edMouseMove,{passive:false});
+  cv.addEventListener('touchend',edMouseUp);
+  document.addEventListener('keydown',edKeyDown);
+  if(!ED.piece)editorNewScore({title:'Untitled Score',staffType:'grand',measures:4});
+  edSyncControls();
+}
+// ——— Creation wizard ———
+function openScoreWizard(){const m=document.getElementById('wizardModal');if(m)m.style.display='flex';}
+function closeScoreWizard(){const m=document.getElementById('wizardModal');if(m)m.style.display='none';}
+function createScoreFromWizard(){
+  const g=id=>document.getElementById(id);
+  const ks=g('wizKey').value.split(':');
+  editorNewScore({
+    title:g('wizTitle').value.trim()||'Untitled Score',
+    composer:g('wizComposer').value.trim(),
+    staffType:g('wizStaff').value,
+    fifths:+ks[0],mode:ks[1]||'major',
+    beats:+g('wizBeats').value,beatType:+g('wizBeatType').value,
+    tempo:+g('wizTempo').value||90,
+    measures:4
+  });
+  // reflect into inline controls
+  const st=g('edKeySel');if(st)st.value=g('wizKey').value;
+  closeScoreWizard();showTab('editor');setEditorStatus('blank score created — drag notes from the palette onto the staff');
+}
+
 function initBuilder(){
   const rc=document.getElementById('rootChips');
   rc.innerHTML=ALL_NOTE_NAMES2.map((n,i)=>`<span class="note-chip sel" data-root="${60+i}" onclick="toggleChip(this,'root')">${n}</span>`).join('');
@@ -2480,9 +3465,10 @@ window.addEventListener('load',()=>{
   applySettingsToControls();
   renderBeatDots();initBuilder();buildUpdate();
   renderPieceList();
+  initEditor();
   updateUI();
   nextExercise();
-  window.addEventListener('resize',()=>{drawStaff();drawPiano()});
+  window.addEventListener('resize',()=>{drawStaff();drawPiano();if(document.getElementById('tab-editor').classList.contains('active'))edRender();});
 });
 </script>
 </body>

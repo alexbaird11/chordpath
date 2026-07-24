@@ -1,0 +1,175 @@
+{
+  "title": "Broken Chords",
+  "keyName": "G major",
+  "fifths": 1,
+  "mode": "major",
+  "timeSig": {
+    "beats": 4,
+    "beatType": 4
+  },
+  "tempo": 96,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            71
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 0.5,
+          "midis": [
+            43
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 0.5,
+          "duration": 0.5,
+          "midis": [
+            50
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1.5,
+          "duration": 0.5,
+          "midis": [
+            50
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 0.5,
+          "midis": [
+            43
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2.5,
+          "duration": 0.5,
+          "midis": [
+            50
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 3,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 3.5,
+          "duration": 0.5,
+          "midis": [
+            50
+          ],
+          "hand": "L"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            67
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 0.5,
+          "midis": [
+            48
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 0.5,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1,
+          "duration": 0.5,
+          "midis": [
+            60
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1.5,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 0.5,
+          "midis": [
+            48
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2.5,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 3,
+          "duration": 0.5,
+          "midis": [
+            60
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 3.5,
+          "duration": 0.5,
+          "midis": [
+            55
+          ],
+          "hand": "L"
+        }
+      ]
+    }
+  ]
+}
