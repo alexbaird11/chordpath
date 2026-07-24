@@ -1,0 +1,74 @@
+{
+  "title": "Nine Eight Study",
+  "keyName": "A major",
+  "fifths": 3,
+  "mode": "major",
+  "timeSig": {
+    "beats": 9,
+    "beatType": 8
+  },
+  "tempo": 108,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 0.5,
+          "midis": [
+            76
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0.5,
+          "duration": 0.5,
+          "midis": [
+            78
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 0.5,
+          "midis": [
+            80
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1.5,
+          "duration": 1.5,
+          "midis": [
+            83
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3,
+          "duration": 0.5,
+          "midis": [
+            80
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3.5,
+          "duration": 0.5,
+          "midis": [
+            78
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 4,
+          "duration": 0.5,
+          "midis": [
+            76
+          ],
+          "hand": "R"
+        }
+      ]
+    }
+  ]
+}

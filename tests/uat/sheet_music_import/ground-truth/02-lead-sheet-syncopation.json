@@ -1,0 +1,95 @@
+{
+  "title": "Syncopated Line",
+  "keyName": "G major",
+  "fifths": 1,
+  "mode": "major",
+  "timeSig": {
+    "beats": 4,
+    "beatType": 4
+  },
+  "tempo": 112,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 0.5,
+          "midis": [
+            67
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0.5,
+          "duration": 0.5,
+          "midis": [
+            69
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            71
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1.5,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3.5,
+          "duration": 0.5,
+          "midis": [
+            71
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            72
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 0.5,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1.5,
+          "duration": 0.5,
+          "midis": [
+            72
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            67
+          ],
+          "hand": "R"
+        }
+      ]
+    }
+  ]
+}

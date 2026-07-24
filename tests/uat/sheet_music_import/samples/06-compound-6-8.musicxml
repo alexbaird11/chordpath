@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+ <work><work-title>Compound Meter</work-title></work>
+ <identification><creator type="composer">Anon</creator></identification>
+ <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+ <part id="P1">
+  <measure number="1">
+   <attributes>
+    <divisions>2</divisions>
+    <key><fifths>-1</fifths><mode>major</mode></key>
+    <time><beats>6</beats><beat-type>8</beat-type></time>
+    <staves>1</staves>
+    <clef number="1"><sign>G</sign><line>2</line></clef>
+   </attributes>
+   <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><sound tempo="120"/></direction>
+   <note>
+    <pitch><step>F</step><octave>4</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+   <note>
+    <pitch><step>A</step><octave>4</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+   <note>
+    <pitch><step>C</step><octave>5</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+   <note>
+    <pitch><step>B</step><alter>-1</alter><octave>4</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+   <note>
+    <pitch><step>A</step><octave>4</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+   <note>
+    <pitch><step>F</step><octave>4</octave></pitch>
+    <duration>1</duration>
+    <type>eighth</type>
+   </note>
+  </measure>
+  <measure number="2">
+   <note>
+    <pitch><step>C</step><octave>5</octave></pitch>
+    <duration>3</duration>
+    <type>quarter</type>
+    <dot/>
+   </note>
+   <note>
+    <pitch><step>A</step><octave>4</octave></pitch>
+    <duration>3</duration>
+    <type>quarter</type>
+    <dot/>
+   </note>
+  </measure>
+ </part>
+</score-partwise>

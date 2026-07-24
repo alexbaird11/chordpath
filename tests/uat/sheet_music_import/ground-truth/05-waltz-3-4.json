@@ -1,0 +1,130 @@
+{
+  "title": "Little Waltz",
+  "keyName": "D major",
+  "fifths": 2,
+  "mode": "major",
+  "timeSig": {
+    "beats": 3,
+    "beatType": 4
+  },
+  "tempo": 132,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            78
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            50
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            57,
+            62
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            57,
+            62
+          ],
+          "hand": "L"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            76
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            45
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            52,
+            57
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            73
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            52,
+            57
+          ],
+          "hand": "L"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 3,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 3,
+          "midis": [
+            50,
+            57,
+            62
+          ],
+          "hand": "L"
+        }
+      ]
+    }
+  ]
+}

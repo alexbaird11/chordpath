@@ -1,0 +1,185 @@
+{
+  "title": "Classical Excerpt",
+  "keyName": "Bb major",
+  "fifths": -2,
+  "mode": "major",
+  "timeSig": {
+    "beats": 4,
+    "beatType": 4
+  },
+  "tempo": 92,
+  "measures": [
+    {
+      "number": 1,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 0.5,
+          "midis": [
+            70
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            46,
+            58
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 0.5,
+          "duration": 0.5,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 0.5,
+          "midis": [
+            77
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            53,
+            58
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1.5,
+          "duration": 0.5,
+          "midis": [
+            82
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 1,
+          "midis": [
+            74,
+            79
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            51,
+            58
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 3,
+          "duration": 1,
+          "midis": [
+            70,
+            77
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 1,
+          "midis": [
+            70,
+            75
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 2,
+          "midis": [
+            39,
+            55
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 1,
+          "duration": 1,
+          "midis": [
+            70,
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 0.5,
+          "midis": [
+            72
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 2,
+          "duration": 2,
+          "midis": [
+            46,
+            58
+          ],
+          "hand": "L"
+        },
+        {
+          "onset": 2.5,
+          "duration": 0.5,
+          "midis": [
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 3,
+          "duration": 1,
+          "midis": [
+            75
+          ],
+          "hand": "R"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "events": [
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            65,
+            70,
+            74
+          ],
+          "hand": "R"
+        },
+        {
+          "onset": 0,
+          "duration": 4,
+          "midis": [
+            34,
+            46,
+            58
+          ],
+          "hand": "L"
+        }
+      ]
+    }
+  ]
+}

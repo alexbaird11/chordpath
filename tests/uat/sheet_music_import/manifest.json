@@ -1,0 +1,98 @@
+[
+  {
+    "name": "01-lead-sheet-c-major",
+    "title": "Lead Sheet in C",
+    "category": "simple single-line lead sheet",
+    "key": "C major",
+    "time": "4/4",
+    "grand": false
+  },
+  {
+    "name": "02-lead-sheet-syncopation",
+    "title": "Syncopated Line",
+    "category": "single-line lead sheet (eighths, dotted)",
+    "key": "G major",
+    "time": "4/4",
+    "grand": false
+  },
+  {
+    "name": "03-grand-staff-beginner",
+    "title": "First Piano Piece",
+    "category": "grand staff beginner",
+    "key": "C major",
+    "time": "4/4",
+    "grand": true
+  },
+  {
+    "name": "04-grand-staff-broken-chords",
+    "title": "Broken Chords",
+    "category": "grand staff, LH accompaniment",
+    "key": "G major",
+    "time": "4/4",
+    "grand": true
+  },
+  {
+    "name": "05-waltz-3-4",
+    "title": "Little Waltz",
+    "category": "complex time signature 3/4",
+    "key": "D major",
+    "time": "3/4",
+    "grand": true
+  },
+  {
+    "name": "06-compound-6-8",
+    "title": "Compound Meter",
+    "category": "complex time signature 6/8",
+    "key": "F major",
+    "time": "6/8",
+    "grand": false
+  },
+  {
+    "name": "07-compound-9-8",
+    "title": "Nine Eight Study",
+    "category": "complex time signature 9/8",
+    "key": "A major",
+    "time": "9/8",
+    "grand": false
+  },
+  {
+    "name": "08-classical-dense",
+    "title": "Classical Excerpt",
+    "category": "dense multi-measure classical",
+    "key": "Bb major",
+    "time": "4/4",
+    "grand": true
+  },
+  {
+    "name": "09-key-a-flat-major",
+    "title": "Study in A-flat",
+    "category": "multiple key signatures (4 flats)",
+    "key": "Ab major",
+    "time": "4/4",
+    "grand": true
+  },
+  {
+    "name": "10-key-e-major",
+    "title": "Study in E",
+    "category": "multiple key signatures (4 sharps)",
+    "key": "E major",
+    "time": "4/4",
+    "grand": false
+  },
+  {
+    "name": "11-ties-and-sustains",
+    "title": "Ties and Sustains",
+    "category": "ties over the barline, sustains",
+    "key": "C major",
+    "time": "4/4",
+    "grand": true
+  },
+  {
+    "name": "12-minor-key-waltz",
+    "title": "Minor Waltz",
+    "category": "minor key, 3/4",
+    "key": "A minor",
+    "time": "3/4",
+    "grand": false
+  }
+]
