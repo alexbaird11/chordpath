@@ -208,6 +208,40 @@
   .staff-card.nudge #staffCanvas { animation: staff-nudge .34s var(--ease-out); }
   @keyframes staff-nudge { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 60% { transform: translateX(3px); } 85% { transform: translateX(-1px); } }
 
+  /* ═══ PR14 · Command palette + focus mode ═══════════════════════════════
+     A Linear-style ⌘K palette for keyboard-first navigation, and a
+     distraction-free focus mode that fades the chrome around the staff. */
+  .palette-overlay { align-items: flex-start; }
+  .palette { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg);
+    width: min(560px, 94vw); margin-top: 12vh; box-shadow: 0 20px 60px rgba(0,0,0,.28); overflow: hidden;
+    animation: palette-in .16s var(--ease-out); }
+  @keyframes palette-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  #paletteInput { width: 100%; border: none; border-bottom: 0.5px solid var(--border); border-radius: 0;
+    font-size: 15px; padding: 15px 18px; background: transparent; color: var(--ink); }
+  #paletteInput:focus-visible { outline: none; box-shadow: none; }
+  .palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
+  .palette-item { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 9px 12px; border-radius: var(--radius); cursor: pointer; color: var(--ink); }
+  .palette-item .pl-label { font-size: 13.5px; }
+  .palette-item .pl-group { font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink3); }
+  .palette-item[aria-selected="true"] { background: var(--green-light); }
+  .palette-item[aria-selected="true"] .pl-group { color: var(--green-dark); }
+  .palette-empty { padding: 18px; text-align: center; color: var(--ink3); font-size: 13px; }
+  .focus-exit { position: fixed; top: 14px; right: 16px; z-index: 90; font-family: var(--font-ui);
+    font-size: 12px; padding: 6px 12px; border-radius: 20px; border: 0.5px solid var(--border2);
+    background: var(--bg); color: var(--ink2); box-shadow: var(--shadow); cursor: pointer; }
+  .focus-exit:hover { color: var(--ink); }
+  /* Focus mode: fade the chrome so only the staff remains. */
+  body.focus-mode .tab-bar,
+  body.focus-mode .metrics-row,
+  body.focus-mode .piano-strip-head,
+  body.focus-mode .piano-wrap,
+  body.focus-mode #levelProgressLabel,
+  body.focus-mode .progress-bar { display: none; }
+  body.focus-mode .header { opacity: .35; transition: opacity .2s; }
+  body.focus-mode .header:hover { opacity: 1; }
+  body.focus-mode .staff-card { box-shadow: 0 8px 40px rgba(0,0,0,.08); }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
     .piece-row:hover, .plan-step:hover, .metric-pill:hover, .note-chip:active { transform: none; }
@@ -596,6 +630,15 @@
     </div>
   </div>
 </div>
+
+<!-- PR14 · Command palette (⌘K / Ctrl+K) and focus-mode exit affordance -->
+<div id="paletteOverlay" class="modal-overlay palette-overlay" style="display:none" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="palette">
+    <input id="paletteInput" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command… (Esc to close)" aria-label="Search commands">
+    <div id="paletteList" class="palette-list" role="listbox"></div>
+  </div>
+</div>
+<button id="focusExit" class="focus-exit" style="display:none" onclick="Palette.setFocusMode(false)" title="Exit focus mode (Esc)">✕ focus</button>
 
 <script>
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -3814,6 +3857,114 @@ window.LiveStaff = (function(){
 })();
 if (document.readyState === 'complete') window.LiveStaff.start();
 else window.addEventListener('load', function(){ window.LiveStaff.start(); });
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     Command palette + keyboard-first flow + focus mode (PR14). A ⌘K/Ctrl+K
+     palette drives navigation, level/clef, sound and focus by keyboard; Esc
+     closes it or exits focus mode; ArrowRight advances the drill. Guards
+     against firing inside inputs/selects and the editor's own shortcuts.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+window.Palette = (function(){
+  'use strict';
+  var open = false, items = [], sel = 0;
+  function ov(){ return document.getElementById('paletteOverlay'); }
+  function input(){ return document.getElementById('paletteInput'); }
+  function list(){ return document.getElementById('paletteList'); }
+  function call(fn){ try { fn(); } catch(e){} }
+
+  function setFocusMode(on){
+    document.body.classList.toggle('focus-mode', !!on);
+    var ex = document.getElementById('focusExit'); if (ex) ex.style.display = on ? '' : 'none';
+    try { if (typeof drawStaff === 'function') drawStaff(); if (typeof drawPiano === 'function') drawPiano(); } catch(e){}
+  }
+  function focusModeOn(){ return document.body.classList.contains('focus-mode'); }
+
+  // The command registry — everything reachable by keyboard.
+  function commands(){
+    var cmds = [];
+    [['practice','Go to Practice'],['pieces','Go to Pieces'],['editor','Go to Editor'],
+     ['metronome','Go to Metronome'],['builder','Go to Exercise builder'],['stats','Go to Stats']]
+      .forEach(function(t){ cmds.push({ label:t[1], group:'Navigate', run:function(){ showTab(t[0]); } }); });
+    ['single notes','intervals','triads','7th chords','progressions','custom'].forEach(function(name,i){
+      cmds.push({ label:'Level '+(i+1)+' · '+name, group:'Level', run:function(){ setLevel(i);
+        var s=document.getElementById('levelSel'); if(s) s.value=i; } });
+    });
+    [['treble','Treble clef'],['bass','Bass clef'],['grand','Grand staff']].forEach(function(c){
+      cmds.push({ label:c[1], group:'Clef', run:function(){ setClef(c[0]);
+        var s=document.getElementById('clefSel'); if(s) s.value=c[0]; } });
+    });
+    cmds.push({ label:'Next exercise', group:'Practice', run:function(){ if(typeof nextExercise==='function') nextExercise(); } });
+    cmds.push({ label:'Start / stop metronome', group:'Practice', run:function(){ if(typeof toggleMetronome==='function') toggleMetronome(); } });
+    cmds.push({ label:(window.Sfx && window.Sfx.isMuted() ? 'Unmute sound' : 'Mute sound'), group:'Settings',
+      run:function(){ if(window.Sfx) window.Sfx.toggle(); } });
+    cmds.push({ label:(focusModeOn() ? 'Exit focus mode' : 'Enter focus mode'), group:'View',
+      run:function(){ setFocusMode(!focusModeOn()); } });
+    return cmds;
+  }
+
+  function render(q){
+    var all = commands();
+    q = (q||'').trim().toLowerCase();
+    items = q ? all.filter(function(c){ return (c.label+' '+c.group).toLowerCase().indexOf(q) >= 0; }) : all;
+    if (sel >= items.length) sel = Math.max(0, items.length-1);
+    var el = list(); if (!el) return;
+    if (!items.length){ el.innerHTML = '<div class="palette-empty">No matching command</div>'; return; }
+    el.innerHTML = items.map(function(c,i){
+      return '<div class="palette-item" role="option" data-i="'+i+'" aria-selected="'+(i===sel)+'">' +
+             '<span class="pl-label">'+c.label+'</span><span class="pl-group">'+c.group+'</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('.palette-item'), function(node){
+      node.addEventListener('mousemove', function(){ sel = +node.getAttribute('data-i'); paint(); });
+      node.addEventListener('click', function(){ sel = +node.getAttribute('data-i'); run(); });
+    });
+  }
+  function paint(){
+    Array.prototype.forEach.call(list().querySelectorAll('.palette-item'), function(node){
+      var on = (+node.getAttribute('data-i')) === sel; node.setAttribute('aria-selected', on);
+      if (on) node.scrollIntoView({ block:'nearest' });
+    });
+  }
+  function run(){ var it = items[sel]; close(); if (it) call(it.run); }
+
+  function openPalette(){
+    if (open) return; open = true; sel = 0;
+    var o = ov(); if (!o) return; o.style.display = 'flex';
+    var inp = input(); inp.value = ''; render(''); inp.focus();
+  }
+  function close(){ open = false; var o = ov(); if (o) o.style.display = 'none'; }
+  function isOpen(){ return open; }
+
+  // Palette-local keys (typing filters; navigation/confirm/close).
+  document.addEventListener('input', function(e){ if (open && e.target === input()) render(e.target.value); });
+  input().addEventListener('keydown', function(e){
+    if (!open) return;
+    if (e.key === 'ArrowDown'){ e.preventDefault(); if (items.length){ sel = (sel+1) % items.length; paint(); } }
+    else if (e.key === 'ArrowUp'){ e.preventDefault(); if (items.length){ sel = (sel-1+items.length) % items.length; paint(); } }
+    else if (e.key === 'Enter'){ e.preventDefault(); run(); }
+    else if (e.key === 'Escape'){ e.preventDefault(); close(); }
+  });
+
+  // Global shortcuts.
+  document.addEventListener('keydown', function(e){
+    var k = (e.key || '').toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && k === 'k'){ e.preventDefault(); open ? close() : openPalette(); return; }
+    if (e.key === 'Escape'){ if (open){ close(); return; } if (focusModeOn()){ setFocusMode(false); return; } }
+    // Keyboard "next" on the practice tab, when not typing and no overlay is up.
+    if (e.key === 'ArrowRight' && !open){
+      var tag = (e.target && e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+      var practice = document.getElementById('tab-practice');
+      var wiz = document.getElementById('wizardModal');
+      if (practice && practice.classList.contains('active') && (!wiz || wiz.style.display === 'none')){
+        e.preventDefault(); if (typeof nextExercise === 'function') nextExercise();
+      }
+    }
+  });
+
+  return { open: openPalette, close: close, isOpen: isOpen, setFocusMode: setFocusMode, focusModeOn: focusModeOn };
+})();
 </script>
 </body>
 </html>
