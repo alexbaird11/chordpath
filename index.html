@@ -193,6 +193,14 @@
   .fx-spark.go { animation: fx-spark .7s var(--ease-out) forwards; }
   @keyframes fx-spark { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3); } }
 
+  /* ═══ PR5 · Gentle, instructive failure ═════════════════════════════════
+     A wrong answer is a teaching moment, not a punishment: a soft amber wash,
+     a gentle nudge-shake (not a jarring buzz), a located highlight on the
+     keys (drawn on the piano), and a persistent plain-language message. */
+  .fx-wash.miss { background: radial-gradient(120% 90% at 50% 55%, var(--amber-light), transparent 70%); }
+  .staff-card.nudge #staffCanvas { animation: staff-nudge .34s var(--ease-out); }
+  @keyframes staff-nudge { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 60% { transform: translateX(3px); } 85% { transform: translateX(-1px); } }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
     .piece-row:hover, .plan-step:hover, .metric-pill:hover, .note-chip:active { transform: none; }
@@ -610,6 +618,7 @@ const LANDMARKS={
 const STORAGE_KEY='chordpath.v3';
 
 let level=0, clef='treble', currentEx=null, targetMidis=[];
+let missMidis=[];   // notes the learner missed on the last attempt — located on the keyboard (PR5)
 let score={correct:0,total:0,streak:0,bestStreak:0,xp:0};
 let levelScores=[0,0,0,0,0,0], levelAttempts=[0,0,0,0,0,0], missedNotes={};
 let micActive=false, midiActive=false, audioCtx=null, analyser=null, micStream=null, pitchTimer=null;
@@ -800,6 +809,7 @@ function genExercise(){
 }
 
 function nextExercise(){
+  missMidis=[];   // a new target clears any located miss highlight (PR5)
   if(practiceMode==='piece'){
     // "next →" in piece mode skips the current step (an assessment counts it as missed)
     if(assessRun)recordAssess(false,null);
@@ -1162,8 +1172,10 @@ function drawPiano(){
       if(midi<startM||midi>endM)return;
       const kx=(o*7+wi)*wW+1;
       const hi=targetMidis.includes(midi);
+      const mi=missMidis.includes(midi);
       // Muted highlight — softer than the staff's target color so the eye favors the staff.
-      ctx.fillStyle=hi?'#D6EFE6':'#fff';
+      // Missed notes glow a gentle amber to *locate* the note the learner reached for.
+      ctx.fillStyle=mi?'#F6E2D2':(hi?'#D6EFE6':'#fff');
       ctx.strokeStyle=ink;ctx.lineWidth=.5;
       ctx.fillRect(kx,1,wW-1,wH-1);ctx.strokeRect(kx,1,wW-1,wH-1);
       if(hi&&showKeyNames){
@@ -1178,7 +1190,8 @@ function drawPiano(){
       if(midi<startM||midi>endM)return;
       const kx=(o*7+off)*wW+1;
       const hi=targetMidis.includes(midi);
-      ctx.fillStyle=hi?'#5FB89B':ink;
+      const mi=missMidis.includes(midi);
+      ctx.fillStyle=mi?'#D98E5A':(hi?'#5FB89B':ink);
       ctx.fillRect(kx,1,bW,bH);
     });
   }
@@ -2269,6 +2282,7 @@ function startAssessment(){
 }
 
 function setPieceTarget(){
+  missMidis=[];
   const step=pieceQueue[pieceCursor];
   targetMidis=[...step.midis];
   currentEx={
@@ -2582,6 +2596,7 @@ function checkAnswer(played,playedAt=null){
     setNotationHint(okMsg, 'ok');
     updateTimingPill(timing);
     flashStaff('#9FE1CB');
+    if(missMidis.length){ missMidis=[]; drawPiano(); }   // clear any located miss highlight
     updateUI();saveState();
     if(window.Fx)Fx.success((level+1)*8+5, score.streak);
     if(practiceMode==='piece'){
@@ -2599,13 +2614,21 @@ function checkAnswer(played,playedAt=null){
   } else {
     score.total++;score.streak=0;
     if(practiceMode==='piece')recordAssess(false,null);
-    const msg=feedback||'try again';
-    setStatus('red', msg);
-    setNotationHint(msg, 'err');
+    // Gentle, instructive failure: name the missed note(s) in plain language and
+    // light them on the keyboard so the learner sees *where* the note lives.
+    missMidis = missing.slice();
+    const nudge = missing.length
+      ? ('not quite — you missed ' + missing.map(nn).join(', ') + ' · shown on the keys')
+      : (feedback || 'not quite — give it another try');
+    setStatus('red', '');                 // dedupe: the detail lives in one place (the staff hint)
+    setNotationHint(nudge, 'err');
     updateTimingPill(timing);
-    flashStaff('#F09595');
+    flashStaff('#FBEEE6');                 // soft amber, not a harsh red
+    if(window.Fx)Fx.miss();
+    drawPiano();                           // render the located highlight
     updateUI();saveState();
-    setTimeout(()=>{setStatus('ready','try again');updateNotationHint();},1100);
+    // Keep the teaching message visible until the next attempt; just relax the pill.
+    setTimeout(()=>{ setStatus('ready',''); },1300);
   }
 }
 
@@ -3691,7 +3714,18 @@ window.Fx = (function(){
       ephemeral(s, 760);
     }
   }
-  return { success: success };
+  // Gentle, instructive failure. Soft amber wash + a small nudge (never a
+  // jarring buzz), a muted-safe low tone, and a located highlight on the keys
+  // (drawn by drawPiano from the missMidis the caller sets).
+  function miss(){
+    try { if (window.Sfx) window.Sfx.miss(); } catch(e){}
+    var card = document.querySelector('.staff-card');
+    if (card){ card.classList.remove('nudge'); void card.offsetWidth; card.classList.add('nudge');
+      setTimeout(function(){ card.classList.remove('nudge'); }, 360); }
+    var l = layer(); if (!l) return;
+    ephemeral(el('div','fx-wash miss'), 700);
+  }
+  return { success: success, miss: miss };
 })();
 </script>
 </body>
