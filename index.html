@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ChordPath — Sight Reader</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:wght@400;500&display=swap');
+  /* PR2 · Design tokens + humane type. Self-contained font stacks (no webfont
+     CDN — removes the external dependency and its offline failure): a warm
+     humanist sans for UI/prose, a refined serif for the wordmark, and a crisp
+     monospace reserved for data/notation where aligned digits matter. */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede8;
@@ -15,6 +18,13 @@
     --red: #E24B4A; --red-light: #FCEBEB;
     --amber: #BA7517; --amber-light: #FAEEDA;
     --radius: 8px; --radius-lg: 12px;
+    /* type */
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --fs-0: 11px; --fs-1: 12px; --fs-2: 13px; --fs-3: 15px; --fs-4: 18px; --fs-5: 22px;
+    /* spacing scale */
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,30 +35,30 @@
       --red-light: #3d1212; --amber-light: #3a2800;
     }
   }
-  body { font-family: 'IBM Plex Mono', monospace; background: var(--bg3); color: var(--ink); font-size: 13px; min-height: 100vh; }
+  body { font-family: var(--font-ui); background: var(--bg3); color: var(--ink); font-size: 13px; min-height: 100vh; -webkit-font-smoothing: antialiased; }
   /* Wider reading surface: modern web sheet-music apps (Soundslice, Flat, Flowkey) run the
      score nearly edge-to-edge and let the staff breathe. 1180px keeps ~5 measures per line
      readable on a laptop while phones still get the fluid 100% width. */
   #app { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
   .header { display: flex; align-items: baseline; gap: 12px; }
-  .title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 500; }
+  .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
   .tab-bar { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 14px; }
-  .tab { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 7px 16px; border: none; background: transparent; color: var(--ink2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -0.5px; transition: color .15s; }
+  .tab { font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 7px 16px; border: none; background: transparent; color: var(--ink2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -0.5px; transition: color .15s; }
   .tab:hover { color: var(--ink); }
   .tab.active { color: var(--green); border-bottom-color: var(--green); }
   .tab-pane { display: none; } .tab-pane.active { display: block; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .col { display: flex; flex-direction: column; gap: 8px; }
-  button { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 6px 13px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--ink); cursor: pointer; transition: background .12s, opacity .12s; }
+  button { font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 6px 13px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--ink); cursor: pointer; transition: background .12s, opacity .12s; }
   button:hover { background: var(--bg2); }
   button:active { opacity: .7; }
   button.on { background: var(--green); color: #fff; border-color: var(--green); }
   button.accent { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   button.accent:hover { opacity: .82; }
   button.danger { border-color: var(--red); color: var(--red); }
-  select, input[type=number], input[type=text] { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--ink); cursor: pointer; }
+  select, input[type=number], input[type=text] { font-family: var(--font-ui); font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--ink); cursor: pointer; }
   input[type=number] { width: 68px; }
   input[type=range] { width: 100%; accent-color: var(--green); }
   /* Subtle green focus ring — replaces the harsh native blue outline that competed with the sheet music */
@@ -67,7 +77,7 @@
   .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .metric { background: var(--bg2); border-radius: var(--radius); padding: 10px 12px; }
-  .metric .n { font-size: 24px; font-weight: 500; color: var(--ink); line-height: 1.2; }
+  .metric .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 24px; font-weight: 500; color: var(--ink); line-height: 1.2; }
   .metric .l { font-size: 11px; color: var(--ink2); margin-bottom: 3px; }
   .progress-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .3s; }
@@ -97,7 +107,7 @@
   .feedback-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .metrics-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .metric-pill { flex: 1; min-width: 66px; background: var(--bg2); border-radius: var(--radius); padding: 7px 8px; text-align: center; }
-  .metric-pill .n { font-size: 17px; font-weight: 500; line-height: 1.15; color: var(--ink); }
+  .metric-pill .n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 500; line-height: 1.15; color: var(--ink); }
   .metric-pill .l { font-size: 10px; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
@@ -856,7 +866,7 @@ function drawNoteLabels(ctx,notes,cx,lg,color,bg){
   const list=notes.slice().sort((a,b)=>a.y-b.y);
   const gap=13, lx=cx+lg*2.7;
   let prevY=-Infinity;
-  ctx.font='10px IBM Plex Mono';ctx.textBaseline='middle';
+  ctx.font='10px "SF Mono", ui-monospace, monospace';ctx.textBaseline='middle';
   list.forEach(nd=>{
     let ly=nd.y; if(ly<prevY+gap)ly=prevY+gap; prevY=ly;
     const label=nn(nd.midi);
@@ -971,7 +981,7 @@ function drawStaff(){
 function drawFingeringStack(ctx,items,x,lg,above,edgeY,color,bg){
   if(!items.length)return;
   const fs=Math.max(10,Math.round(lg*.82));
-  ctx.font=`500 ${fs}px IBM Plex Mono`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font=`500 ${fs}px "SF Mono", ui-monospace, monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
   const gap=fs+3;
   const sorted=items.slice().sort((a,b)=>a.midi-b.midi); // ascending pitch
   const highestY=Math.min(...sorted.map(s=>s.y));
@@ -1105,7 +1115,7 @@ function drawPiano(){
       ctx.strokeStyle=ink;ctx.lineWidth=.5;
       ctx.fillRect(kx,1,wW-1,wH-1);ctx.strokeRect(kx,1,wW-1,wH-1);
       if(hi&&showKeyNames){
-        ctx.fillStyle='#085041';ctx.font=`${Math.max(8,Math.floor(wW*.32))}px IBM Plex Mono`;
+        ctx.fillStyle='#085041';ctx.font=`${Math.max(8,Math.floor(wW*.32))}px "SF Mono", ui-monospace, monospace`;
         ctx.textAlign='center';ctx.fillText(NOTE_NAMES[ch],kx+wW/2,wH-4);
       }
     });
@@ -2424,12 +2434,12 @@ function drawPieceStaff(){
 
   // measures
   let xm=headW;
-  ctx.font=`9px IBM Plex Mono`;
+  ctx.font=`9px "SF Mono", ui-monospace, monospace`;
   for(let mi=line.start;mi<=line.end;mi++){
     const meas=piece.measures[mi];
     const wM=mW(mi);
     // measure number
-    ctx.fillStyle=ink3;ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
+    ctx.fillStyle=ink3;ctx.font='9px "SF Mono", ui-monospace, monospace';ctx.textAlign='left';
     ctx.fillText(String(mi+1),xm-lg*.2,tTop-lg*1.7);
     // barline at measure end
     ctx.strokeStyle=ink2;ctx.lineWidth=1;
@@ -2469,7 +2479,7 @@ function drawPieceStaff(){
   }
   // line indicator (e.g. "line 2/4")
   const li=lines.indexOf(line);
-  ctx.fillStyle=ink3;ctx.font='10px IBM Plex Mono';ctx.textAlign='right';
+  ctx.fillStyle=ink3;ctx.font='10px "SF Mono", ui-monospace, monospace';ctx.textAlign='right';
   ctx.fillText(`line ${li+1}/${lines.length}`,W-8,12);
   ctx.textAlign='left';
 }
@@ -2977,7 +2987,7 @@ function renderScore(canvas,piece,W,opts){
       const meas=piece.measures[it.mi],mx=it.x,wM=it.w;
       lineRec.measures.push({mi:it.mi,x0:mx,x1:mx+wM,w:wM});
       // measure number
-      ctx.fillStyle=ink3;ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
+      ctx.fillStyle=ink3;ctx.font='9px "SF Mono", ui-monospace, monospace';ctx.textAlign='left';
       ctx.fillText(String(it.mi+1),mx+2,tTop-lg*1.5);
       // barline
       ctx.strokeStyle=ink2;ctx.lineWidth=1;
