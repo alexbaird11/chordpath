@@ -51,6 +51,17 @@
   .daily-goal-copy small { color:var(--ink2); font-size:10px; }
   .recap-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0; }
   .recap-grid .metric { text-align:center; }
+  .mastery-map { display:grid; grid-template-columns:repeat(auto-fit,minmax(54px,1fr)); gap:6px; margin-bottom:16px; }
+  .mastery-note { border:0.5px solid var(--border); border-radius:var(--radius); padding:8px 5px; text-align:center; background:color-mix(in srgb,var(--green-light) var(--mastery),var(--bg)); }
+  .mastery-note strong { display:block; font:600 13px var(--font-mono); }
+  .mastery-note small { color:var(--ink2); font-size:9px; }
+  .speed-curve { display:flex; align-items:end; gap:3px; height:72px; padding:8px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+  .speed-point { flex:1; min-width:3px; max-width:18px; height:var(--speed); border-radius:3px 3px 0 0; background:var(--green); opacity:.75; }
+  .badge-shelf { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .badge { border:0.5px solid var(--border); border-radius:999px; padding:6px 10px; color:var(--ink3); }
+  .badge.earned { color:var(--green-dark); border-color:var(--green); background:var(--green-light); }
+  .level-toast { position:fixed; left:50%; top:18%; z-index:120; transform:translate(-50%,-12px); padding:12px 18px; border-radius:999px; background:var(--ink); color:var(--bg); opacity:0; pointer-events:none; transition:opacity .2s,transform .3s var(--ease-spring); }
+  .level-toast.show { opacity:1; transform:translate(-50%,0); }
   .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
@@ -584,6 +595,15 @@
       <div class="sect">suggested next drill</div>
       <div id="suggestedDrill" class="pill amber" style="margin-bottom:16px">keep practicing</div>
 
+      <div class="sect">note mastery</div>
+      <div id="masteryMap" class="mastery-map"></div>
+
+      <div class="sect">reading speed curve</div>
+      <div id="speedCurve" class="speed-curve" role="img" aria-label="Recent response speed"></div>
+
+      <div class="sect">milestones</div>
+      <div id="badgeShelf" class="badge-shelf"></div>
+
       <div class="sect">accuracy by level</div>
       <div id="levelBars" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
 
@@ -611,6 +631,7 @@
     </div>
   </div>
 </div>
+<div id="levelToast" class="level-toast" role="status" aria-live="polite"></div>
 
 <div id="sessionRecap" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="recapTitle">
   <div class="modal">
@@ -654,6 +675,7 @@ const LANDMARKS={
 
 const STORAGE_KEY='chordpath.v3';
 const HABIT_KEY='chordpath.habit.v1';
+const MASTERY_KEY='chordpath.mastery.v1';
 
 let level=0, clef='treble', currentEx=null, targetMidis=[];
 let missMidis=[];   // notes the learner missed on the last attempt — located on the keyboard (PR5)
@@ -687,6 +709,7 @@ let exerciseScored=false;  // ensure response time is recorded once per exercise
 let habitExerciseCredited=false;
 let habit={goal:20,days:{},sessions:[]};
 let sessionHabit={startedAt:Date.now(),reads:0,correct:0,totalMs:0,timed:0};
+let mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0};
 let responseStats={
   totalMs:0, count:0, fastestCorrectMs:null,
   byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
@@ -2637,6 +2660,7 @@ function checkAnswer(played,playedAt=null,meta={}){
     // Record response time once, on the first accepted answer for this exercise.
     if(!exerciseScored && responseMs!=null){recordResponse(responseMs);exerciseScored=true;}
     recordHabitRead(true,responseMs,genuine);
+    recordMastery(target,true,responseMs,genuine);
     const okMsg=extras.length?('correct · '+feedback):'correct';
     setStatus('green', okMsg);
     setNotationHint(okMsg, 'ok');
@@ -2661,6 +2685,7 @@ function checkAnswer(played,playedAt=null,meta={}){
   } else {
     score.total++;score.streak=0;
     recordHabitRead(false,responseMs,genuine);
+    recordMastery(target,false,responseMs,genuine);
     if(practiceMode==='piece')recordAssess(false,null);
     // Gentle, instructive failure: name the missed note(s) in plain language and
     // light them on the keyboard so the learner sees *where* the note lives.
@@ -2780,6 +2805,50 @@ window.Habit={
   finish:finishSession,
   refresh:updateHabitUI
 };
+
+function loadMastery(){
+  try{const raw=localStorage.getItem(MASTERY_KEY);if(raw)mastery=Object.assign(mastery,JSON.parse(raw));}catch(e){}
+  mastery.notes=mastery.notes||{};mastery.speed=mastery.speed||[];mastery.earned=mastery.earned||[];
+}
+function saveMastery(){try{localStorage.setItem(MASTERY_KEY,JSON.stringify(mastery));}catch(e){}}
+function masteryForMidi(midi){
+  const n=mastery.notes[nn(midi)];if(!n||!n.attempts)return 0;
+  const accuracy=n.correct/n.attempts,volume=Math.min(1,n.attempts/8),speed=n.avgMs?Math.max(0,Math.min(1,(4000-n.avgMs)/3000)):.5;
+  return Math.round((accuracy*.65+speed*.2+volume*.15)*100);
+}
+const MASTERY_BADGES=[
+  {id:'first-ten',at:10,label:'10 true reads'},
+  {id:'fifty',at:50,label:'50 true reads'},
+  {id:'century',at:100,label:'100 true reads'}
+];
+function recordMastery(midis,correct,responseMs,genuine=true){
+  if(!genuine)return false;
+  [...new Set(midis)].forEach(m=>{
+    const key=nn(m),n=mastery.notes[key]||(mastery.notes[key]={midi:m,attempts:0,correct:0,totalMs:0,timed:0});
+    n.attempts++;if(correct)n.correct++;
+    if(responseMs!=null){n.totalMs+=responseMs;n.timed++;n.avgMs=n.totalMs/n.timed;}
+  });
+  if(correct)mastery.totalCorrect++;
+  if(responseMs!=null){mastery.speed.push(Math.round(responseMs));mastery.speed=mastery.speed.slice(-24);}
+  MASTERY_BADGES.forEach(b=>{if(mastery.totalCorrect>=b.at&&!mastery.earned.includes(b.id))mastery.earned.push(b.id);});
+  const nextLevel=Math.floor(mastery.totalCorrect/25);
+  if(nextLevel>mastery.level){mastery.level=nextLevel;showLevelUp(nextLevel);}
+  saveMastery();renderMastery();return true;
+}
+function showLevelUp(n){
+  const el=document.getElementById('levelToast');if(!el)return;
+  el.textContent=`reading level ${n+1} · earned through real notes`;el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),1800);
+}
+function renderMastery(){
+  const map=document.getElementById('masteryMap');if(!map)return;
+  const notes=Object.values(mastery.notes).sort((a,b)=>a.midi-b.midi);
+  map.innerHTML=notes.length?notes.map(n=>{const pct=masteryForMidi(n.midi);return `<div class="mastery-note" style="--mastery:${pct}%"><strong>${nn(n.midi)}</strong><small>${pct}% · ${n.correct}/${n.attempts}</small></div>`;}).join(''):'<span class="label">Your note map grows from genuine reads.</span>';
+  const curve=document.getElementById('speedCurve'),values=mastery.speed;
+  curve.innerHTML=values.length?values.map(ms=>`<i class="speed-point" title="${fmtMs(ms)}" style="--speed:${Math.max(8,Math.min(100,(4500-ms)/40))}%"></i>`).join(''):'<span class="label">Response-time history will appear here.</span>';
+  const shelf=document.getElementById('badgeShelf');shelf.innerHTML=MASTERY_BADGES.map(b=>`<span class="badge ${mastery.earned.includes(b.id)?'earned':''}">${mastery.earned.includes(b.id)?'✓ ':'○ '}${b.label}</span>`).join('');
+}
+window.Mastery={get state(){return mastery;},record:recordMastery,score:masteryForMidi,render:renderMastery};
 
 function getSuggestedDrill(){
   const octEntries=Object.entries(errorStats.octaveErrors).sort((a,b)=>b[1]-a[1]);
@@ -3628,12 +3697,15 @@ function resetStats(){
     byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
     recent:[]};
   rhythmScore={onTime:0,early:0,late:0,missed:0};
+  mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0};
+  try{localStorage.removeItem(MASTERY_KEY);}catch(e){}
   resetPersistentState();updateUI();saveState();
 }
 
 window.addEventListener('load',()=>{
   loadState();
   loadHabit();
+  loadMastery();
   loadPieces();
   applySettingsToControls();
   renderBeatDots();initBuilder();buildUpdate();
@@ -3641,6 +3713,7 @@ window.addEventListener('load',()=>{
   initEditor();
   updateUI();
   updateHabitUI();
+  renderMastery();
   nextExercise();
   window.addEventListener('resize',()=>{drawStaff();drawPiano();if(document.getElementById('tab-editor').classList.contains('active'))edRender();});
 });
