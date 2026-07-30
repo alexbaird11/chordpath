@@ -42,6 +42,15 @@
   #app { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
   .header { display: flex; align-items: baseline; gap: 12px; }
   .header .sound-toggle { margin-left: auto; min-width: 82px; }
+  .daily-goal { display:flex; align-items:center; gap:8px; margin-left:auto; border-color:var(--border); }
+  .daily-goal-ring { --goal-pct:0%; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--green) var(--goal-pct),var(--bg3) 0); position:relative; }
+  .daily-goal-ring::after { content:""; position:absolute; inset:4px; border-radius:50%; background:var(--bg); }
+  .daily-goal-ring span { position:relative; z-index:1; font:600 9px var(--font-mono); }
+  .daily-goal-copy { text-align:left; line-height:1.2; }
+  .daily-goal-copy strong { display:block; font-size:11px; }
+  .daily-goal-copy small { color:var(--ink2); font-size:10px; }
+  .recap-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0; }
+  .recap-grid .metric { text-align:center; }
   .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
@@ -220,6 +229,10 @@
   <div class="header">
     <div class="title">ChordPath</div>
     <div class="subtitle">sight reading trainer</div>
+    <button id="dailyGoalBtn" class="daily-goal" onclick="finishSession()" title="Finish session and view recap">
+      <span class="daily-goal-ring" id="dailyGoalRing"><span id="dailyGoalCount">0</span></span>
+      <span class="daily-goal-copy"><strong>today's reads</strong><small id="dailyStreak">start a streak</small></span>
+    </button>
     <button id="muteBtn" class="sound-toggle" onclick="toggleGlobalMute()" aria-pressed="false" title="Mute sound and haptics">sound on</button>
   </div>
 
@@ -599,6 +612,20 @@
   </div>
 </div>
 
+<div id="sessionRecap" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="recapTitle">
+  <div class="modal">
+    <div class="sect" style="margin-top:0">session complete</div>
+    <h2 id="recapTitle" style="font:600 22px var(--font-display)">A little reading goes a long way.</h2>
+    <div class="recap-grid">
+      <div class="metric"><div class="l">genuine reads</div><div class="n" id="recapReads">0</div></div>
+      <div class="metric"><div class="l">accuracy</div><div class="n" id="recapAccuracy">—</div></div>
+      <div class="metric"><div class="l">avg response</div><div class="n" id="recapTime">—</div></div>
+    </div>
+    <p class="label" id="recapStreak"></p>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="accent" onclick="closeSessionRecap()">keep going</button></div>
+  </div>
+</div>
+
 <script>
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const DIATONIC=[0,0,1,1,2,3,3,4,4,5,5,6];
@@ -626,6 +653,7 @@ const LANDMARKS={
 };
 
 const STORAGE_KEY='chordpath.v3';
+const HABIT_KEY='chordpath.habit.v1';
 
 let level=0, clef='treble', currentEx=null, targetMidis=[];
 let missMidis=[];   // notes the learner missed on the last attempt — located on the keyboard (PR5)
@@ -656,6 +684,9 @@ let assessRun=null;            // {perMeasure:{n:{attempts,correct,totalMs}}}
 
 let exerciseStartedAt=null;
 let exerciseScored=false;  // ensure response time is recorded once per exercise
+let habitExerciseCredited=false;
+let habit={goal:20,days:{},sessions:[]};
+let sessionHabit={startedAt:Date.now(),reads:0,correct:0,totalMs:0,timed:0};
 let responseStats={
   totalMs:0, count:0, fastestCorrectMs:null,
   byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
@@ -832,6 +863,7 @@ function nextExercise(){
   targetMidis=[...currentEx.midis];
   exerciseStartedAt=performance.now();
   exerciseScored=false;
+  habitExerciseCredited=false;
   setStatus('ready','play the highlighted notes');
   drawStaff();drawPiano();updateNotationHint();
   if(level===5&&customConfig.rhythm)startRhythmMode();
@@ -2571,7 +2603,7 @@ function classifyTiming(playedAt){
 }
 
 // ——— Answer Checking (diagnostic) ———
-function checkAnswer(played,playedAt=null){
+function checkAnswer(played,playedAt=null,meta={}){
   const target=[...targetMidis].sort((a,b)=>a-b);
   const missing=target.filter(m=>!played.includes(m));
   const extras=played.filter(p=>!target.includes(p));
@@ -2585,6 +2617,7 @@ function checkAnswer(played,playedAt=null){
   if(timing){ rhythmScore[timing]++; beatAnswered=true; }
 
   const responseMs=(exerciseStartedAt!=null)?performance.now()-exerciseStartedAt:null;
+  const genuine=meta.genuine!==false;
 
   if(practiceMode==='drill')levelAttempts[Math.min(level,5)]++;
 
@@ -2603,6 +2636,7 @@ function checkAnswer(played,playedAt=null){
     if(practiceMode==='drill')levelScores[Math.min(level,5)]++;
     // Record response time once, on the first accepted answer for this exercise.
     if(!exerciseScored && responseMs!=null){recordResponse(responseMs);exerciseScored=true;}
+    recordHabitRead(true,responseMs,genuine);
     const okMsg=extras.length?('correct · '+feedback):'correct';
     setStatus('green', okMsg);
     setNotationHint(okMsg, 'ok');
@@ -2626,6 +2660,7 @@ function checkAnswer(played,playedAt=null){
     }
   } else {
     score.total++;score.streak=0;
+    recordHabitRead(false,responseMs,genuine);
     if(practiceMode==='piece')recordAssess(false,null);
     // Gentle, instructive failure: name the missed note(s) in plain language and
     // light them on the keyboard so the learner sees *where* the note lives.
@@ -2690,6 +2725,61 @@ function fmtMs(ms){
   if(ms==null)return '—';
   return ms>=1000?(ms/1000).toFixed(1)+'s':Math.round(ms)+'ms';
 }
+
+function localDay(ts=Date.now()){
+  const d=new Date(ts),pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function loadHabit(){
+  try{const raw=localStorage.getItem(HABIT_KEY);if(raw)habit=Object.assign(habit,JSON.parse(raw));}catch(e){}
+  habit.days=habit.days||{};habit.sessions=habit.sessions||[];
+}
+function saveHabit(){try{localStorage.setItem(HABIT_KEY,JSON.stringify(habit));}catch(e){}}
+function habitStreak(){
+  const active=new Set(Object.keys(habit.days).filter(k=>(habit.days[k].reads||0)>0));
+  let d=new Date(),count=0,forgiven=false;
+  if(!active.has(localDay(d))){d.setDate(d.getDate()-1);}
+  for(let guard=0;guard<370;guard++){
+    if(active.has(localDay(d)))count++;
+    else if(count&& !forgiven){forgiven=true;}
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return {count,forgiven};
+}
+function recordHabitRead(correct,responseMs,genuine=true){
+  if(!genuine||habitExerciseCredited)return false;
+  habitExerciseCredited=!!correct;
+  const key=localDay(),day=habit.days[key]||(habit.days[key]={reads:0,correct:0});
+  day.reads++;if(correct)day.correct++;
+  sessionHabit.reads++;if(correct)sessionHabit.correct++;
+  if(responseMs!=null){sessionHabit.totalMs+=responseMs;sessionHabit.timed++;}
+  saveHabit();updateHabitUI();return true;
+}
+function updateHabitUI(){
+  const day=habit.days[localDay()]||{reads:0},reads=day.reads||0,pct=Math.min(100,reads/habit.goal*100);
+  const ring=document.getElementById('dailyGoalRing');if(ring)ring.style.setProperty('--goal-pct',pct+'%');
+  const count=document.getElementById('dailyGoalCount');if(count)count.textContent=reads;
+  const streak=habitStreak(),copy=document.getElementById('dailyStreak');
+  if(copy)copy.textContent=streak.count?`${streak.count} day streak${streak.forgiven?' · grace day used':''}`:`${habit.goal} read goal`;
+}
+function finishSession(){
+  const acc=sessionHabit.reads?Math.round(sessionHabit.correct/sessionHabit.reads*100)+'%':'—';
+  document.getElementById('recapReads').textContent=sessionHabit.reads;
+  document.getElementById('recapAccuracy').textContent=acc;
+  document.getElementById('recapTime').textContent=sessionHabit.timed?fmtMs(sessionHabit.totalMs/sessionHabit.timed):'—';
+  const streak=habitStreak();document.getElementById('recapStreak').textContent=streak.count?`You kept a ${streak.count}-day reading streak alive.`:'Your first genuine read starts a streak.';
+  habit.sessions.push({...sessionHabit,endedAt:Date.now()});habit.sessions=habit.sessions.slice(-30);saveHabit();
+  document.getElementById('sessionRecap').style.display='flex';
+}
+function closeSessionRecap(){document.getElementById('sessionRecap').style.display='none';}
+window.Habit={
+  get state(){return habit;},
+  record:recordHabitRead,
+  streak:habitStreak,
+  finish:finishSession,
+  refresh:updateHabitUI
+};
 
 function getSuggestedDrill(){
   const octEntries=Object.entries(errorStats.octaveErrors).sort((a,b)=>b[1]-a[1]);
@@ -2818,7 +2908,7 @@ function playNotes(midis){
   try{return window.Sfx?window.Sfx.notes(midis):Promise.resolve(false)}catch(e){return Promise.resolve(false)}
 }
 
-function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis],performance.now())}
+function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis],performance.now(),{genuine:false})}
 
 // ——— Microphone ———
 async function toggleMic(){
@@ -3543,12 +3633,14 @@ function resetStats(){
 
 window.addEventListener('load',()=>{
   loadState();
+  loadHabit();
   loadPieces();
   applySettingsToControls();
   renderBeatDots();initBuilder();buildUpdate();
   renderPieceList();
   initEditor();
   updateUI();
+  updateHabitUI();
   nextExercise();
   window.addEventListener('resize',()=>{drawStaff();drawPiano();if(document.getElementById('tab-editor').classList.contains('active'))edRender();});
 });
