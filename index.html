@@ -45,15 +45,20 @@
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
   .tab-bar { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 14px; }
-  .tab { font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 7px 16px; border: none; background: transparent; color: var(--ink2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -0.5px; transition: color .15s; }
+  .tab { position: relative; font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 7px 16px; border: none; background: transparent; color: var(--ink2); cursor: pointer; margin-bottom: -0.5px; transition: color .15s; }
   .tab:hover { color: var(--ink); }
-  .tab.active { color: var(--green); border-bottom-color: var(--green); }
+  /* Animated underline that scales in from the centre (microinteraction). */
+  .tab::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -0.5px; height: 2px; background: var(--green); border-radius: 2px; transform: scaleX(0); transform-origin: center; transition: transform .2s var(--ease-out, ease); }
+  .tab.active { color: var(--green); }
+  .tab.active::after, .tab:hover::after { transform: scaleX(1); }
+  .tab:hover::after { background: var(--border2); }
+  .tab.active:hover::after { background: var(--green); }
   .tab-pane { display: none; } .tab-pane.active { display: block; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .col { display: flex; flex-direction: column; gap: 8px; }
   button { font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 6px 13px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--ink); cursor: pointer; transition: background .12s, opacity .12s; }
   button:hover { background: var(--bg2); }
-  button:active { opacity: .7; }
+  button:active { opacity: .7; transform: translateY(0.5px) scale(0.985); }
   button.on { background: var(--green); color: #fff; border-color: var(--green); }
   button.accent { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   button.accent:hover { opacity: .82; }
@@ -146,6 +151,28 @@
   .wiz-grid { display: flex; flex-direction: column; gap: 12px; }
   .wiz-grid label { display: flex; flex-direction: column; gap: 4px; }
   .wiz-grid input, .wiz-grid select { padding: 6px 10px; }
+
+  /* ═══ PR3 · Microinteraction pass ═══════════════════════════════════════
+     Small, consistent responses: hover lift on interactive cards, a "pop" for
+     changing numbers, springy palette/chip selection, and a shared easing.
+     Everything degrades to no-op under prefers-reduced-motion (block below). */
+  :root { --ease-out: cubic-bezier(.22,.61,.36,1); --ease-spring: cubic-bezier(.34,1.56,.64,1); }
+  .piece-row, .plan-step, .metric, .metric-pill { transition: transform .16s var(--ease-out), box-shadow .16s var(--ease-out); }
+  .piece-row:hover, .plan-step:hover { transform: translateY(-1px); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .metric-pill:hover { transform: translateY(-1px); }
+  .note-chip { transition: transform .12s var(--ease-out), background .12s, color .12s, border-color .12s; }
+  .note-chip:active { transform: scale(.94); }
+  .note-chip.sel, button.pal.sel { animation: chip-pop .28s var(--ease-spring); }
+  @keyframes chip-pop { 0% { transform: scale(.9); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  /* Number "pop" — toggled briefly by Motion.pulse() when a metric changes. */
+  .metric-pill .n, .metric .n { display: inline-block; transition: transform .18s var(--ease-out); }
+  .metric-pill .n.pop, .metric .n.pop { animation: num-pop .42s var(--ease-spring); }
+  @keyframes num-pop { 0% { transform: scale(1); } 35% { transform: scale(1.18); color: var(--green); } 100% { transform: scale(1); } }
+  .progress-fill { transition: width .45s var(--ease-out); }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+    .piece-row:hover, .plan-step:hover, .metric-pill:hover, .note-chip:active { transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -2616,20 +2643,36 @@ function getSuggestedDrill(){
   return 'Keep practicing — build your streak';
 }
 
+// PR3 microinteraction: set a numeric readout, rolling the digits up and
+// popping on change. Falls back to an instant set when Motion is unavailable
+// or reduced-motion is on. String values (e.g. "82ms", "—") are set directly
+// with a pop, so the final DOM value is always exact for the same frame's reads.
+function craftSetNum(id, val, isInt){
+  const el=document.getElementById(id); if(!el)return;
+  const prev=el.textContent, next=String(val);
+  if(prev===next)return;
+  const M=window.Motion;
+  if(isInt && M && !M.reduced() && typeof val==='number'){
+    const cur=parseFloat(String(prev).replace(/[^\d.-]/g,''));
+    if(isFinite(cur) && cur!==val){ M.countUp(el, val, {dur:500, format:n=>String(Math.round(n))}); }
+    else el.textContent=next;
+  } else { el.textContent=next; }
+  if(M && M.pulse) M.pulse(el, 'pop', 440); else el.classList.remove('pop');
+}
 function updateUI(){
-  document.getElementById('mCorrect').textContent=score.correct;
-  document.getElementById('mStreak').textContent=score.streak;
+  craftSetNum('mCorrect', score.correct, true);
+  craftSetNum('mStreak', score.streak, true);
   document.getElementById('mAcc').textContent=score.total?Math.round(score.correct/score.total*100)+'%':'—';
-  document.getElementById('mXP').textContent=score.xp;
+  craftSetNum('mXP', score.xp, true);
   document.getElementById('mAvgTime').textContent=responseStats.count?fmtMs(responseStats.totalMs/responseStats.count):'—';
   const lvlXP=levelScores[Math.min(level,5)];
   document.getElementById('levelProgress').style.width=Math.min(100,lvlXP/10*100)+'%';
   document.getElementById('levelProgressLabel').textContent=`level ${level+1} · ${lvlXP}/10 to advance`;
 
-  document.getElementById('stTotal').textContent=score.total;
-  document.getElementById('stBestStreak').textContent=score.bestStreak;
+  craftSetNum('stTotal', score.total, true);
+  craftSetNum('stBestStreak', score.bestStreak, true);
   document.getElementById('stAcc').textContent=score.total?Math.round(score.correct/score.total*100)+'%':'—';
-  document.getElementById('stXP').textContent=score.xp;
+  craftSetNum('stXP', score.xp, true);
 
   const lnames=['single','intervals','triads','7ths','progressions','custom'];
   document.getElementById('levelBars').innerHTML=lnames.map((n,i)=>{
