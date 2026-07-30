@@ -41,6 +41,7 @@
      readable on a laptop while phones still get the fluid 100% width. */
   #app { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
   .header { display: flex; align-items: baseline; gap: 12px; }
+  .header .sound-toggle { margin-left: auto; min-width: 82px; }
   .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
@@ -219,6 +220,7 @@
   <div class="header">
     <div class="title">ChordPath</div>
     <div class="subtitle">sight reading trainer</div>
+    <button id="muteBtn" class="sound-toggle" onclick="toggleGlobalMute()" aria-pressed="false" title="Mute sound and haptics">sound on</button>
   </div>
 
   <div class="card">
@@ -634,7 +636,6 @@ let midiAccess=null, heldMidi=new Set();
 let bpm=80, beatsPerBar=4, beatNote=4, metroOn=false, metroBeat=0, metroTimer=null, countInLeft=0;
 let customConfig={roots:null,types:null,clefs:['treble'],inversion:'root',rhythm:false,rhythmBPM:80};
 let rhythmTimer=null;
-let _mCtx=null;
 
 // ——— Phase 3 pedagogy state ———
 let hintMode='full';      // 'full' | 'landmarks' | 'intervals' | 'none'
@@ -2813,34 +2814,8 @@ function applySettingsToControls(){
   if(fb){fb.classList.toggle('on',showFingering);fb.setAttribute('aria-pressed',String(showFingering));}
 }
 
-function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
-
 function playNotes(midis){
-  try{
-    const ctx=getAudioCtx();
-    midis.forEach(midi=>{
-      const freq=midiToFreq(midi);
-      const harmonics=[1,2,3,4,5,6];
-      const gains=[1,.5,.25,.15,.08,.04];
-      const masterGain=ctx.createGain();
-      masterGain.connect(ctx.destination);
-      const now=ctx.currentTime;
-      const dur=1.4;
-      masterGain.gain.setValueAtTime(0,now);
-      masterGain.gain.linearRampToValueAtTime(0.18,now+0.008);
-      masterGain.gain.exponentialRampToValueAtTime(0.12,now+0.08);
-      masterGain.gain.exponentialRampToValueAtTime(0.001,now+dur);
-      harmonics.forEach((h,i)=>{
-        const osc=ctx.createOscillator();
-        const hGain=ctx.createGain();
-        osc.type='sine';
-        osc.frequency.value=freq*h;
-        hGain.gain.value=gains[i];
-        osc.connect(hGain);hGain.connect(masterGain);
-        osc.start(now);osc.stop(now+dur);
-      });
-    });
-  }catch(e){}
+  try{return window.Sfx?window.Sfx.notes(midis):Promise.resolve(false)}catch(e){return Promise.resolve(false)}
 }
 
 function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis],performance.now())}
@@ -2963,17 +2938,10 @@ function stopMetro(){
   document.getElementById('metroStatus').textContent='stopped';
   document.querySelectorAll('.beat-dot').forEach(d=>d.classList.remove('active'));
 }
-function getAudioCtx(){if(!_mCtx)_mCtx=new AudioContext();return _mCtx}
 function playClick(accent,countIn,sub){
   try{
-    const ctx=getAudioCtx();
-    const o=ctx.createOscillator(),g=ctx.createGain();
-    o.connect(g);g.connect(ctx.destination);
-    o.frequency.value=sub?600:countIn?800:accent&&document.getElementById('chkAccent').checked?1400:1000;
-    const vol=sub?.2:accent?.6:.45;
-    g.gain.setValueAtTime(vol,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+(sub?.03:.07));
-    o.start();o.stop(ctx.currentTime+(sub?.03:.07));
+    const accented=!!(accent&&document.getElementById('chkAccent').checked);
+    if(window.Sfx)window.Sfx.beat(accented,!!countIn,!!sub);
   }catch(e){}
 }
 
@@ -3649,18 +3617,36 @@ window.addEventListener('load',()=>{
 
 (function(){
   'use strict';
-  var KEY = 'chordpath.muted', ctx = null, muted = false;
+  var KEY = 'chordpath.muted';
+  var SAMPLES = [
+    { url:'assets/piano-c2.ogg', root:36 },
+    { url:'assets/piano-c4.ogg', root:60 },
+    { url:'assets/piano-g4.ogg', root:79 }
+  ];
+  var ctx = null, muted = false, pianoBank = null, pianoPromise = null, sampleState = 'idle';
+  var active = new Set();
   try { muted = localStorage.getItem(KEY) === '1'; } catch(e){}
+  function blocked(){ return muted || document.hidden; }
   function ac(){
     if (!ctx){ var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; try { ctx = new C(); } catch(e){ return null; } }
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch(e){} }
     return ctx;
   }
   function midiHz(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+  function track(node){
+    active.add(node);
+    var prior = node.onended;
+    node.onended = function(e){ active.delete(node); if (typeof prior === 'function') prior.call(node,e); };
+    return node;
+  }
+  function stopActive(){
+    active.forEach(function(node){ try { node.stop(0); } catch(e){} });
+    active.clear();
+  }
   // One shaped sine/triangle "voice" with a fast attack and exponential decay.
   function voice(freq, at, dur, peak, type){
     var c = ac(); if (!c) return;
-    var o = c.createOscillator(), g = c.createGain();
+    var o = track(c.createOscillator()), g = c.createGain();
     o.type = type || 'sine'; o.frequency.setValueAtTime(freq, at);
     g.gain.setValueAtTime(0.0001, at);
     g.gain.linearRampToValueAtTime(peak, at + 0.012);
@@ -3668,24 +3654,110 @@ window.addEventListener('load',()=>{
     o.connect(g); g.connect(c.destination);
     o.start(at); o.stop(at + dur + 0.03);
   }
+  function decode(c, bytes){
+    return new Promise(function(resolve,reject){
+      var settled = false;
+      function done(v){ if (!settled){ settled = true; resolve(v); } }
+      function fail(e){ if (!settled){ settled = true; reject(e); } }
+      try {
+        var p = c.decodeAudioData(bytes.slice(0), done, fail);
+        if (p && typeof p.then === 'function') p.then(done,fail);
+      } catch(e){ fail(e); }
+    });
+  }
+  // Three compact, public-domain Steinway anchors cover bass, middle and upper
+  // ranges. They stay bundled/offline and the oscillator path below is only a
+  // graceful fallback when sample decoding is unavailable.
+  function loadPiano(){
+    if (pianoBank) return Promise.resolve(pianoBank);
+    if (pianoPromise) return pianoPromise;
+    var c = ac(); if (!c) return Promise.resolve(null);
+    sampleState = 'loading';
+    pianoPromise = Promise.all(SAMPLES.map(function(sample){
+      return fetch(sample.url, { cache:'force-cache' })
+        .then(function(r){ if (!r.ok) throw new Error('piano sample '+r.status); return r.arrayBuffer(); })
+        .then(function(bytes){ return decode(c,bytes); })
+        .then(function(buffer){ return { root:sample.root, buffer:buffer }; });
+    }))
+      .then(function(bank){ pianoBank = bank; sampleState = 'ready'; return bank; })
+      .catch(function(){ sampleState = 'fallback'; return null; });
+    return pianoPromise;
+  }
+  function sampledNote(sample, midi, peak){
+    if (!sample || blocked()) return;
+    var c = ac(); if (!c) return;
+    var src = track(c.createBufferSource()), g = c.createGain(), now = c.currentTime;
+    var rate = Math.pow(2,(midi-sample.root)/12), dur = Math.min(2.2, sample.buffer.duration/rate);
+    src.buffer = sample.buffer; src.playbackRate.setValueAtTime(rate,now);
+    g.gain.setValueAtTime(0.0001,now);
+    g.gain.linearRampToValueAtTime(peak || 0.22,now+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+Math.max(0.08,dur));
+    src.connect(g); g.connect(c.destination); src.start(now); src.stop(now+dur+0.02);
+  }
+  function notes(midis, peak){
+    if (blocked() || !Array.isArray(midis) || !midis.length) return Promise.resolve(false);
+    var copy = midis.slice(0,8);
+    return loadPiano().then(function(bank){
+      if (blocked()) return false;
+      if (bank){ copy.forEach(function(m){
+        var midi = +m, nearest = bank.reduce(function(best,s){
+          return Math.abs(s.root-midi)<Math.abs(best.root-midi)?s:best;
+        },bank[0]);
+        sampledNote(nearest,midi,peak||0.20);
+      }); return true; }
+      var c = ac(); if (!c) return false;
+      copy.forEach(function(m){ voice(midiHz(+m),c.currentTime,0.8,0.10,'triangle'); });
+      return false;
+    });
+  }
   function isMuted(){ return muted; }
-  function setMuted(v){ muted = !!v; try { localStorage.setItem(KEY, muted ? '1' : '0'); } catch(e){} return muted; }
+  function syncMuteButton(){
+    var b = document.getElementById('muteBtn'); if (!b) return;
+    b.textContent = muted ? 'sound off' : 'sound on';
+    b.classList.toggle('on',muted); b.setAttribute('aria-pressed',String(muted));
+    b.title = muted ? 'Turn sound and haptics on' : 'Mute sound and haptics';
+  }
+  function setMuted(v){
+    muted = !!v;
+    try { localStorage.setItem(KEY, muted ? '1' : '0'); } catch(e){}
+    if (muted){ stopActive(); try { if (navigator.vibrate) navigator.vibrate(0); } catch(e){} }
+    syncMuteButton(); return muted;
+  }
   function toggle(){ return setMuted(!muted); }
+  function haptic(kind){
+    if (blocked() || !navigator || typeof navigator.vibrate !== 'function') return false;
+    var patterns = { beat:10, correct:18, milestone:[24,36,24] };
+    if (!(kind in patterns)) return false;
+    try { return navigator.vibrate(patterns[kind]); } catch(e){ return false; }
+  }
   // Warm, resolved "correct" — a rising major third that settles.
-  function correct(){ if (muted) return; var c = ac(); if (!c) return; var t = c.currentTime;
+  function correct(){ if (blocked()) return; haptic('correct'); var c = ac(); if (!c) return; var t = c.currentTime;
     voice(midiHz(76), t, 0.18, 0.16, 'triangle'); voice(midiHz(83), t + 0.06, 0.34, 0.14, 'sine'); }
   // Soft, non-punishing "not quite" — a low, gentle fall.
-  function miss(){ if (muted) return; var c = ac(); if (!c) return; var t = c.currentTime;
+  function miss(){ if (blocked()) return; var c = ac(); if (!c) return; var t = c.currentTime;
     voice(midiHz(55), t, 0.22, 0.12, 'sine'); voice(midiHz(51), t + 0.05, 0.26, 0.09, 'sine'); }
   // A short ascending flourish for milestones/level-ups.
-  function levelUp(){ if (muted) return; var c = ac(); if (!c) return; var t = c.currentTime;
+  function levelUp(){ if (blocked()) return; haptic('milestone'); var c = ac(); if (!c) return; var t = c.currentTime;
     [72,76,79,84].forEach(function(m,i){ voice(midiHz(m), t + i*0.08, 0.30, 0.13, 'triangle'); }); }
+  function beat(accent,countIn,sub){
+    if (blocked()) return;
+    var c = ac(); if (!c) return; var t = c.currentTime;
+    voice(sub?600:countIn?800:accent?1400:1000,t,sub?0.03:0.07,sub?0.06:accent?0.16:0.11,'square');
+    if (!sub) haptic('beat');
+  }
   // Metronome-style count-in: an accented downbeat then plain beats.
-  function countIn(beats, bpm){ if (muted) return; var c = ac(); if (!c) return; var t = c.currentTime;
+  function countIn(beats, bpm){ if (blocked()) return; var c = ac(); if (!c) return; var t = c.currentTime;
     var spb = 60 / (bpm || 80); beats = beats || 4;
     for (var i = 0; i < beats; i++) voice(i === 0 ? 1760 : 1320, t + i*spb, 0.05, i === 0 ? 0.18 : 0.12, 'square'); }
-  window.Sfx = { correct:correct, miss:miss, levelUp:levelUp, countIn:countIn,
-                 isMuted:isMuted, setMuted:setMuted, toggle:toggle, _ctx:ac };
+  document.addEventListener('visibilitychange',function(){
+    if (document.hidden){ stopActive(); try { if (navigator.vibrate) navigator.vibrate(0); } catch(e){} }
+  });
+  window.Sfx = { notes:notes, beat:beat, haptic:haptic, correct:correct, miss:miss,
+                 levelUp:levelUp, countIn:countIn, ready:loadPiano,
+                 sampleState:function(){return sampleState}, isMuted:isMuted,
+                 setMuted:setMuted, toggle:toggle, _ctx:ac };
+  window.toggleGlobalMute = toggle;
+  syncMuteButton();
 })();
 </script>
 
