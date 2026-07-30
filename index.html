@@ -100,7 +100,7 @@
   .toolbar .row { gap: 7px; }
   .toolbar select { font-size: 11px; padding: 5px 8px; }
   .toolbar button { font-size: 11px; padding: 5px 11px; }
-  .staff-card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px 16px 12px; }
+  .staff-card { position: relative; background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px 16px 12px; }
   #staffCanvas { width: 100%; display: block; border-radius: var(--radius); transition: background .2s; }
   .notation-hint { margin-top: 10px; text-align: center; font-size: 13px; color: var(--ink); min-height: 18px; letter-spacing: .01em; }
   .notation-hint.err { color: var(--red); }
@@ -169,6 +169,30 @@
   .metric-pill .n.pop, .metric .n.pop { animation: num-pop .42s var(--ease-spring); }
   @keyframes num-pop { 0% { transform: scale(1); } 35% { transform: scale(1.18); color: var(--green); } 100% { transform: scale(1); } }
   .progress-fill { transition: width .45s var(--ease-out); }
+
+  /* ═══ PR4 · The success moment ═══════════════════════════════════════════
+     A composed celebration on a correct answer: a soft green wash, a springing
+     check badge, a rising "+XP", a sparkle burst, and a subtle staff "breathe".
+     Intensity escalates with the streak (gold at every 10th). Overlay only —
+     never touches the canvas render. Neutralized under reduced-motion. */
+  #staffFx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: var(--radius-lg); z-index: 3; }
+  .staff-card.win #staffCanvas { animation: staff-breathe .5s var(--ease-out); }
+  @keyframes staff-breathe { 0% { transform: scale(1); } 40% { transform: scale(1.012); } 100% { transform: scale(1); } }
+  .fx-wash { position: absolute; inset: 0; opacity: 0; background: radial-gradient(120% 90% at 50% 55%, var(--green-light), transparent 70%); }
+  .fx-wash.go { animation: fx-wash .6s var(--ease-out); }
+  @keyframes fx-wash { 0% { opacity: 0; } 30% { opacity: .9; } 100% { opacity: 0; } }
+  .fx-badge { position: absolute; top: 12px; left: 50%; font-size: 30px; line-height: 1; opacity: 0; transform: translateX(-50%); }
+  .fx-badge.go { animation: fx-badge .85s var(--ease-spring) forwards; }
+  .fx-badge.milestone { font-size: 40px; color: var(--amber); text-shadow: 0 2px 14px rgba(186,117,23,.35); }
+  @keyframes fx-badge { 0% { opacity: 0; transform: translateX(-50%) scale(.3) rotate(-12deg); } 30% { opacity: 1; transform: translateX(-50%) scale(1.15) rotate(4deg); } 60% { transform: translateX(-50%) scale(1) rotate(0); } 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) scale(1); } }
+  .fx-xp { position: absolute; left: 50%; top: 42%; font-family: var(--font-mono); font-weight: 600; font-size: 16px; color: var(--green); opacity: 0; transform: translate(-50%,0); }
+  .fx-xp.go { animation: fx-xp 1s var(--ease-out) forwards; }
+  @keyframes fx-xp { 0% { opacity: 0; transform: translate(-50%,14px); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-42px); } }
+  .fx-spark { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--green); opacity: 0; }
+  .fx-spark.milestone { background: var(--amber); }
+  .fx-spark.go { animation: fx-spark .7s var(--ease-out) forwards; }
+  @keyframes fx-spark { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3); } }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
     .piece-row:hover, .plan-step:hover, .metric-pill:hover, .note-chip:active { transform: none; }
@@ -236,6 +260,7 @@
           </span>
         </div>
         <canvas id="staffCanvas" height="190"></canvas>
+        <div id="staffFx" aria-hidden="true"></div>
         <div id="notationHint" class="notation-hint"></div>
       </div>
 
@@ -2558,6 +2583,7 @@ function checkAnswer(played,playedAt=null){
     updateTimingPill(timing);
     flashStaff('#9FE1CB');
     updateUI();saveState();
+    if(window.Fx)Fx.success((level+1)*8+5, score.streak);
     if(practiceMode==='piece'){
       recordAssess(true,responseMs);
       setTimeout(advancePiece,450);
@@ -3625,6 +3651,47 @@ window.addEventListener('load',()=>{
     for (var i = 0; i < beats; i++) voice(i === 0 ? 1760 : 1320, t + i*spb, 0.05, i === 0 ? 0.18 : 0.12, 'square'); }
   window.Sfx = { correct:correct, miss:miss, levelUp:levelUp, countIn:countIn,
                  isMuted:isMuted, setMuted:setMuted, toggle:toggle, _ctx:ac };
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     Craft FX (PR4): the success moment. Composes a celebration overlay inside
+     the staff card — wash, check badge, floating +XP, sparkle burst, staff
+     breathe — plus a Sfx cue, escalating at streak milestones. Overlay-only:
+     it never touches the canvas render loop.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+window.Fx = (function(){
+  'use strict';
+  function layer(){ return document.getElementById('staffFx'); }
+  function el(tag, cls){ var e=document.createElement(tag); if(cls)e.className=cls; return e; }
+  function ephemeral(node, ttl){ var l=layer(); if(!l)return; l.appendChild(node);
+    requestAnimationFrame(function(){ node.classList.add('go'); });
+    setTimeout(function(){ node.remove(); }, ttl); }
+  // Celebrate a correct answer. xpGain shows as a "+N"; streak drives escalation.
+  function success(xpGain, streak){
+    var milestone = streak > 0 && streak % 10 === 0;
+    try { if (window.Sfx) (milestone ? window.Sfx.levelUp : window.Sfx.correct)(); } catch(e){}
+    var card = document.querySelector('.staff-card');
+    if (card){ card.classList.remove('win'); void card.offsetWidth; card.classList.add('win');
+      setTimeout(function(){ card.classList.remove('win'); }, 600); }
+    var l = layer(); if (!l) return;
+    ephemeral(el('div','fx-wash'), 700);
+    var badge = el('div','fx-badge' + (milestone ? ' milestone' : '')); badge.textContent = milestone ? '★' : '✓';
+    ephemeral(badge, 950);
+    if (typeof xpGain === 'number' && xpGain > 0){ var xp = el('div','fx-xp'); xp.textContent = '+' + xpGain; ephemeral(xp, 1050); }
+    // sparkle burst — a few dots flung outward from centre
+    var n = milestone ? 10 : 6;
+    for (var i = 0; i < n; i++){
+      var s = el('div','fx-spark' + (milestone ? ' milestone' : ''));
+      var ang = (Math.PI * 2 * i) / n + Math.random()*0.4, dist = 42 + Math.random()*36;
+      s.style.left = '50%'; s.style.top = '46%';
+      s.style.setProperty('--dx', Math.cos(ang)*dist + 'px');
+      s.style.setProperty('--dy', Math.sin(ang)*dist + 'px');
+      ephemeral(s, 760);
+    }
+  }
+  return { success: success };
 })();
 </script>
 </body>
