@@ -35,6 +35,9 @@
       --red-light: #3d1212; --amber-light: #3a2800;
     }
   }
+  :root[data-theme="light"] { --bg:#fff;--bg2:#f5f5f3;--bg3:#eeede8;--ink:#111110;--ink2:#666562;--ink3:#999895;--border:rgba(0,0,0,.12);--border2:rgba(0,0,0,.22);--green-light:#E1F5EE;--green-dark:#085041;--red-light:#FCEBEB;--amber-light:#FAEEDA; }
+  :root[data-theme="dark"] { --bg:#1a1a18;--bg2:#242422;--bg3:#2e2e2b;--ink:#f0efe8;--ink2:#aaa9a5;--ink3:#777671;--border:rgba(255,255,255,.1);--border2:rgba(255,255,255,.2);--green-light:#0a3d2b;--green-dark:#9FE1CB;--red-light:#3d1212;--amber-light:#3a2800; }
+  :root[data-text="large"] body { font-size:15px; }
   body { font-family: var(--font-ui); background: var(--bg3); color: var(--ink); font-size: 13px; min-height: 100vh; -webkit-font-smoothing: antialiased; }
   /* Wider reading surface: modern web sheet-music apps (Soundslice, Flat, Flowkey) run the
      score nearly edge-to-edge and let the staff breathe. 1180px keeps ~5 measures per line
@@ -71,6 +74,8 @@
   .command-list { display:grid; gap:6px; margin-top:12px; }
   .command { display:flex; justify-content:space-between; width:100%; padding:10px 12px; border-color:var(--border); }
   .command kbd { color:var(--ink3); font:10px var(--font-mono); }
+  .settings-preview { padding:14px; border:0.5px solid var(--border); border-radius:var(--radius); background:var(--bg2); margin:14px 0; }
+  .settings-preview .staff-lines { height:34px; border-radius:4px; background:repeating-linear-gradient(to bottom,transparent 0 6px,var(--ink2) 6px 7px); opacity:.45; margin-top:10px; }
   #focusExit { display:none; position:fixed; top:12px; right:12px; z-index:90; background:var(--bg); }
   body.focus-mode #focusExit { display:block; }
   body.focus-mode .header, body.focus-mode .tab-bar, body.focus-mode .piano-strip-head,
@@ -89,7 +94,10 @@
   .tab.active::after, .tab:hover::after { transform: scaleX(1); }
   .tab:hover::after { background: var(--border2); }
   .tab.active:hover::after { background: var(--green); }
-  .tab-pane { display: none; } .tab-pane.active { display: block; }
+  .tab-pane { display:none; } .tab-pane.active { display:block; animation:tab-enter-forward .28s var(--ease-out); }
+  :root[data-tab-direction="back"] .tab-pane.active { animation-name:tab-enter-back; }
+  @keyframes tab-enter-forward { from { opacity:0; transform:translateX(18px); } to { opacity:1; transform:none; } }
+  @keyframes tab-enter-back { from { opacity:0; transform:translateX(-18px); } to { opacity:1; transform:none; } }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .col { display: flex; flex-direction: column; gap: 8px; }
   button { font-family: var(--font-ui); font-size: 12px; font-weight: 500; padding: 6px 13px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--ink); cursor: pointer; transition: background .12s, opacity .12s; }
@@ -256,6 +264,7 @@
     <div class="title">ChordPath</div>
     <div class="subtitle">sight reading trainer</div>
     <button onclick="openGlossary()" title="Explain music and practice terms">terms</button>
+    <button onclick="openSettings()" title="Appearance settings">settings</button>
     <button id="dailyGoalBtn" class="daily-goal" onclick="finishSession()" title="Finish session and view recap">
       <span class="daily-goal-ring" id="dailyGoalRing"><span id="dailyGoalCount">0</span></span>
       <span class="daily-goal-copy"><strong>today's reads</strong><small id="dailyStreak">start a streak</small></span>
@@ -666,6 +675,19 @@
   </div>
 </div>
 
+<div id="settingsModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal">
+    <div class="sect" style="margin-top:0">settings</div>
+    <h2 id="settingsTitle" style="font:600 22px var(--font-display)">Make the page comfortable</h2>
+    <div class="grid2" style="margin-top:14px">
+      <label class="label">appearance<select id="themeSetting" onchange="previewSettings()"><option value="system">follow device</option><option value="light">light</option><option value="dark">dark</option></select></label>
+      <label class="label">text size<select id="textSetting" onchange="previewSettings()"><option value="default">default</option><option value="large">larger</option></select></label>
+    </div>
+    <div class="settings-preview" aria-live="polite"><strong>Live preview</strong><div class="label">Notes stay crisp while the interface adapts around them.</div><div class="staff-lines" aria-hidden="true"></div></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="cancelSettings()">cancel</button><button class="accent" onclick="saveAppearanceSettings()">save</button></div>
+  </div>
+</div>
+
 <div id="glossaryModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="glossaryTitle" onclick="if(event.target===this)closeGlossary()">
   <div class="modal">
     <div class="sect" style="margin-top:0">plain-language guide</div>
@@ -724,6 +746,7 @@ const LANDMARKS={
 const STORAGE_KEY='chordpath.v3';
 const HABIT_KEY='chordpath.habit.v1';
 const MASTERY_KEY='chordpath.mastery.v1';
+const APPEARANCE_KEY='chordpath.appearance.v1';
 
 let level=0, clef='treble', currentEx=null, targetMidis=[];
 let missMidis=[];   // notes the learner missed on the last attempt — located on the keyboard (PR5)
@@ -733,6 +756,7 @@ let micActive=false, midiActive=false, audioCtx=null, analyser=null, micStream=n
 let midiAccess=null, heldMidi=new Set();
 const COMPUTER_KEYS={a:60,w:61,s:62,e:63,d:64,f:65,t:66,g:67,y:68,h:69,u:70,j:71,k:72,o:73,l:74,p:75,';':76};
 let heldComputer=new Set(),computerTimer=null;
+let appearance={theme:'system',text:'default'},appearanceBefore=null;
 let bpm=80, beatsPerBar=4, beatNote=4, metroOn=false, metroBeat=0, metroTimer=null, countInLeft=0;
 let customConfig={roots:null,types:null,clefs:['treble'],inversion:'root',rhythm:false,rhythmBPM:80};
 let rhythmTimer=null;
@@ -774,14 +798,44 @@ function nn(m){return NOTE_NAMES[m%12]+(Math.floor(m/12)-1)}
 function midiToStaffPos(m){return Math.floor(m/12-1)*7+DIATONIC[m%12]}
 
 function showTab(t){
+  const order=['practice','pieces','editor','metronome','builder','stats'];
+  const current=document.querySelector('.tab.active');
+  const from=current?order.indexOf(current.dataset.tab):-1,to=order.indexOf(t);
+  document.documentElement.dataset.tabDirection=(from>=0&&to<from)?'back':'forward';
   document.querySelectorAll('.tab').forEach(b=>{
     b.classList.toggle('active',b.dataset.tab===t);
   });
   document.querySelectorAll('.tab-pane').forEach(p=>{
     p.classList.toggle('active',p.id==='tab-'+t);
+    if(p.id==='tab-'+t){p.style.animation='none';void p.offsetHeight;p.style.animation='';}
   });
   if(t==='editor')requestAnimationFrame(edRender);
 }
+
+function applyAppearance(next){
+  appearance=Object.assign({},appearance,next||{});
+  if(appearance.theme==='system')delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme=appearance.theme;
+  document.documentElement.dataset.text=appearance.text;
+  requestAnimationFrame(()=>{if(currentEx){drawStaff();drawPiano();}});
+}
+function loadAppearance(){
+  try{const raw=localStorage.getItem(APPEARANCE_KEY);if(raw)appearance=Object.assign(appearance,JSON.parse(raw));}catch(e){}
+  applyAppearance(appearance);
+}
+function openSettings(){
+  appearanceBefore={...appearance};
+  document.getElementById('themeSetting').value=appearance.theme;
+  document.getElementById('textSetting').value=appearance.text;
+  document.getElementById('settingsModal').style.display='flex';
+}
+function previewSettings(){applyAppearance({theme:document.getElementById('themeSetting').value,text:document.getElementById('textSetting').value});}
+function cancelSettings(){if(appearanceBefore)applyAppearance(appearanceBefore);document.getElementById('settingsModal').style.display='none';}
+function saveAppearanceSettings(){
+  previewSettings();try{localStorage.setItem(APPEARANCE_KEY,JSON.stringify(appearance));}catch(e){}
+  appearanceBefore=null;document.getElementById('settingsModal').style.display='none';
+}
+window.Appearance={get state(){return appearance;},open:openSettings,preview:previewSettings,cancel:cancelSettings,save:saveAppearanceSettings};
 
 function openCommandPalette(){document.getElementById('commandPalette').style.display='flex';}
 function closeCommandPalette(){document.getElementById('commandPalette').style.display='none';}
@@ -3793,6 +3847,7 @@ function resetStats(){
 
 window.addEventListener('load',()=>{
   loadState();
+  loadAppearance();
   loadHabit();
   loadMastery();
   loadPieces();
