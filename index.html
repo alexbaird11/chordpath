@@ -66,6 +66,17 @@
   .glossary-list div { padding:10px 12px; background:var(--bg2); border-radius:var(--radius); }
   .glossary-list dt { font-weight:600; margin-bottom:3px; }
   .glossary-list dd { color:var(--ink2); font-size:12px; }
+  .key-guide { display:flex; gap:4px; align-items:center; color:var(--ink2); font-size:10px; }
+  .key-guide kbd { min-width:20px; padding:3px 5px; text-align:center; border:0.5px solid var(--border2); border-bottom-width:2px; border-radius:5px; background:var(--bg); font:10px var(--font-mono); color:var(--ink); }
+  .command-list { display:grid; gap:6px; margin-top:12px; }
+  .command { display:flex; justify-content:space-between; width:100%; padding:10px 12px; border-color:var(--border); }
+  .command kbd { color:var(--ink3); font:10px var(--font-mono); }
+  #focusExit { display:none; position:fixed; top:12px; right:12px; z-index:90; background:var(--bg); }
+  body.focus-mode #focusExit { display:block; }
+  body.focus-mode .header, body.focus-mode .tab-bar, body.focus-mode .piano-strip-head,
+  body.focus-mode .piano-wrap, body.focus-mode .metrics-row, body.focus-mode #levelProgress,
+  body.focus-mode #levelProgressLabel { display:none!important; }
+  body.focus-mode #app { max-width:1280px; padding-top:28px; }
   .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
@@ -328,6 +339,7 @@
           <button id="hearAnswerBtn" onclick="hearAnswer()" title="Play the written notes without scoring them">hear this</button>
           <span id="timingPill" class="pill" style="display:none"></span>
         </div>
+        <div class="key-guide" aria-label="Computer keyboard note keys"><span>computer keys</span><kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><span>…</span></div>
         <div id="hintText" class="label"></div>
       </div>
 
@@ -636,7 +648,23 @@
     </div>
   </div>
 </div>
+<button id="focusExit" onclick="toggleFocusMode(false)">exit focus · Esc</button>
 <div id="levelToast" class="level-toast" role="status" aria-live="polite"></div>
+
+<div id="commandPalette" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="commandTitle" onclick="if(event.target===this)closeCommandPalette()">
+  <div class="modal">
+    <div class="sect" style="margin-top:0">command palette</div>
+    <h2 id="commandTitle" style="font:600 22px var(--font-display)">Where do you want to go?</h2>
+    <div class="command-list">
+      <button class="command" onclick="runCommand('next')"><span>Next exercise</span><kbd>N</kbd></button>
+      <button class="command" onclick="runCommand('hear')"><span>Hear these notes</span><kbd>H</kbd></button>
+      <button class="command" onclick="runCommand('focus')"><span>Toggle focus mode</span><kbd>F</kbd></button>
+      <button class="command" onclick="runCommand('stats')"><span>See progress</span><kbd>G</kbd></button>
+      <button class="command" onclick="runCommand('metronome')"><span>Open metronome</span><kbd>M</kbd></button>
+    </div>
+    <p class="label" style="margin-top:12px">Open anytime with ⌘K or Ctrl+K.</p>
+  </div>
+</div>
 
 <div id="glossaryModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="glossaryTitle" onclick="if(event.target===this)closeGlossary()">
   <div class="modal">
@@ -703,6 +731,8 @@ let score={correct:0,total:0,streak:0,bestStreak:0,xp:0};
 let levelScores=[0,0,0,0,0,0], levelAttempts=[0,0,0,0,0,0], missedNotes={};
 let micActive=false, midiActive=false, audioCtx=null, analyser=null, micStream=null, pitchTimer=null;
 let midiAccess=null, heldMidi=new Set();
+const COMPUTER_KEYS={a:60,w:61,s:62,e:63,d:64,f:65,t:66,g:67,y:68,h:69,u:70,j:71,k:72,o:73,l:74,p:75,';':76};
+let heldComputer=new Set(),computerTimer=null;
 let bpm=80, beatsPerBar=4, beatNote=4, metroOn=false, metroBeat=0, metroTimer=null, countInLeft=0;
 let customConfig={roots:null,types:null,clefs:['treble'],inversion:'root',rhythm:false,rhythmBPM:80};
 let rhythmTimer=null;
@@ -752,6 +782,39 @@ function showTab(t){
   });
   if(t==='editor')requestAnimationFrame(edRender);
 }
+
+function openCommandPalette(){document.getElementById('commandPalette').style.display='flex';}
+function closeCommandPalette(){document.getElementById('commandPalette').style.display='none';}
+function toggleFocusMode(force){
+  const on=typeof force==='boolean'?force:!document.body.classList.contains('focus-mode');
+  document.body.classList.toggle('focus-mode',on);if(on)showTab('practice');
+  return on;
+}
+function runCommand(name){
+  closeCommandPalette();
+  if(name==='next')nextExercise();
+  else if(name==='hear')hearAnswer();
+  else if(name==='focus')toggleFocusMode();
+  else if(name==='stats')showTab('stats');
+  else if(name==='metronome')showTab('metronome');
+}
+function keyboardTargetIsEditable(e){return /input|textarea|select/i.test((e.target&&e.target.tagName)||'');}
+function keyboardPracticeKeyDown(e){
+  const key=e.key.toLowerCase();
+  if((e.metaKey||e.ctrlKey)&&key==='k'){e.preventDefault();openCommandPalette();return;}
+  if(e.key==='Escape'){
+    if(document.getElementById('commandPalette').style.display!=='none')closeCommandPalette();
+    else if(document.body.classList.contains('focus-mode'))toggleFocusMode(false);
+    return;
+  }
+  if(keyboardTargetIsEditable(e)||e.metaKey||e.ctrlKey||e.altKey||e.repeat)return;
+  if(!document.getElementById('tab-practice').classList.contains('active'))return;
+  const midi=COMPUTER_KEYS[key];if(midi==null)return;
+  e.preventDefault();heldComputer.add(midi);playNotes([midi]);
+  clearTimeout(computerTimer);const notes=[...heldComputer];computerTimer=setTimeout(()=>checkAnswer(notes,performance.now(),{genuine:true,source:'keyboard'}),110);
+}
+function keyboardPracticeKeyUp(e){const midi=COMPUTER_KEYS[e.key.toLowerCase()];if(midi!=null)heldComputer.delete(midi);}
+window.KeyboardPractice={keys:COMPUTER_KEYS,get held(){return [...heldComputer]},focus:toggleFocusMode,palette:openCommandPalette};
 
 function setLevel(l){level=l;saveState();nextExercise()}
 function setClef(c){clef=c;saveState();nextExercise()}
@@ -3741,6 +3804,8 @@ window.addEventListener('load',()=>{
   updateHabitUI();
   renderMastery();
   nextExercise();
+  document.addEventListener('keydown',keyboardPracticeKeyDown);
+  document.addEventListener('keyup',keyboardPracticeKeyUp);
   window.addEventListener('resize',()=>{drawStaff();drawPiano();if(document.getElementById('tab-editor').classList.contains('active'))edRender();});
 });
 </script>
