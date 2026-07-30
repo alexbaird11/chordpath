@@ -62,6 +62,10 @@
   button.on { background: var(--green); color: #fff; border-color: var(--green); }
   button.accent { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   button.accent:hover { opacity: .82; }
+  /* PR6 · the skip control is demoted to a quiet secondary so it no longer
+     out-shouts the notation and the real input actions. */
+  button.ghost-next { color: var(--ink2); border-color: var(--border); background: transparent; }
+  button.ghost-next:hover { color: var(--ink); background: var(--bg2); }
   button.danger { border-color: var(--red); color: var(--red); }
   select, input[type=number], input[type=text] { font-family: var(--font-ui); font-size: 12px; padding: 6px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--ink); cursor: pointer; }
   input[type=number] { width: 68px; }
@@ -254,7 +258,7 @@
         </div>
         <div class="row">
           <span id="statusPill" class="pill">ready</span>
-          <button class="accent" onclick="nextExercise()">next →</button>
+          <button class="ghost-next" onclick="nextExercise()" title="skip to the next exercise">next →</button>
         </div>
       </div>
 
@@ -950,9 +954,12 @@ function staffMetrics(W,isGrand){
     const bTop=tTop+Math.round(lg*10);
     return{lg,tTop,bTop,H:bTop+lg*4+Math.round(lg*4.2)};
   }
-  const lg=Math.max(14,Math.min(23,Math.round(W/44)));
-  const tTop=Math.round(lg*4.6);
-  return{lg,tTop,H:tTop+lg*4+Math.round(lg*4.8)};
+  // PR6 · notation as hero: a larger line-gap and tighter dead space so the
+  // note is the biggest thing on the card. Ledger headroom (≈3.9 gaps above,
+  // 3.6 below) stays ample for the drill ranges (treble C4–C6, bass C2–C4).
+  const lg=Math.max(15,Math.min(26,Math.round(W/40)));
+  const tTop=Math.round(lg*3.9);
+  return{lg,tTop,H:tTop+lg*4+Math.round(lg*3.6)};
 }
 
 // Evenly distribute progression chords across the full staff width instead of the old
