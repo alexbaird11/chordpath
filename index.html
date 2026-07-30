@@ -76,6 +76,9 @@
   .command kbd { color:var(--ink3); font:10px var(--font-mono); }
   .settings-preview { padding:14px; border:0.5px solid var(--border); border-radius:var(--radius); background:var(--bg2); margin:14px 0; }
   .settings-preview .staff-lines { height:34px; border-radius:4px; background:repeating-linear-gradient(to bottom,transparent 0 6px,var(--ink2) 6px 7px); opacity:.45; margin-top:10px; }
+  .coach-card { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; margin-bottom:12px; border:0.5px solid var(--border); border-left:3px solid var(--green); border-radius:var(--radius); background:linear-gradient(90deg,var(--green-light),var(--bg) 38%); }
+  .coach-card strong { display:block; font-size:12px; margin-bottom:2px; }
+  .coach-card p { color:var(--ink2); font-size:11px; }
   #focusExit { display:none; position:fixed; top:12px; right:12px; z-index:90; background:var(--bg); }
   body.focus-mode #focusExit { display:block; }
   body.focus-mode .header, body.focus-mode .tab-bar, body.focus-mode .piano-strip-head,
@@ -314,6 +317,11 @@
           <span id="statusPill" class="pill">ready</span>
           <button class="ghost-next" onclick="nextExercise()" title="skip to the next exercise">next →</button>
         </div>
+      </div>
+
+      <div id="coachCard" class="coach-card" aria-live="polite">
+        <div><strong id="coachTitle">Your reading coach</strong><p id="coachMessage">Let’s find a comfortable first note.</p></div>
+        <button id="coachAction" onclick="applyCoachSuggestion()">start gently</button>
       </div>
 
       <!-- 2. Large sheet-music card -->
@@ -783,7 +791,8 @@ let exerciseScored=false;  // ensure response time is recorded once per exercise
 let habitExerciseCredited=false;
 let habit={goal:20,days:{},sessions:[]};
 let sessionHabit={startedAt:Date.now(),reads:0,correct:0,totalMs:0,timed:0};
-let mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0};
+let mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0,recentOutcomes:[]};
+let coachSuggestion={kind:'steady',level:0,label:'start gently'};
 let responseStats={
   totalMs:0, count:0, fastestCorrectMs:null,
   byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
@@ -2950,7 +2959,7 @@ window.Habit={
 
 function loadMastery(){
   try{const raw=localStorage.getItem(MASTERY_KEY);if(raw)mastery=Object.assign(mastery,JSON.parse(raw));}catch(e){}
-  mastery.notes=mastery.notes||{};mastery.speed=mastery.speed||[];mastery.earned=mastery.earned||[];
+  mastery.notes=mastery.notes||{};mastery.speed=mastery.speed||[];mastery.earned=mastery.earned||[];mastery.recentOutcomes=mastery.recentOutcomes||[];
 }
 function saveMastery(){try{localStorage.setItem(MASTERY_KEY,JSON.stringify(mastery));}catch(e){}}
 function masteryForMidi(midi){
@@ -2971,11 +2980,12 @@ function recordMastery(midis,correct,responseMs,genuine=true){
     if(responseMs!=null){n.totalMs+=responseMs;n.timed++;n.avgMs=n.totalMs/n.timed;}
   });
   if(correct)mastery.totalCorrect++;
+  mastery.recentOutcomes.push(correct?1:0);mastery.recentOutcomes=mastery.recentOutcomes.slice(-12);
   if(responseMs!=null){mastery.speed.push(Math.round(responseMs));mastery.speed=mastery.speed.slice(-24);}
   MASTERY_BADGES.forEach(b=>{if(mastery.totalCorrect>=b.at&&!mastery.earned.includes(b.id))mastery.earned.push(b.id);});
   const nextLevel=Math.floor(mastery.totalCorrect/25);
   if(nextLevel>mastery.level){mastery.level=nextLevel;showLevelUp(nextLevel);}
-  saveMastery();renderMastery();return true;
+  saveMastery();renderMastery();renderCoach();return true;
 }
 function showLevelUp(n){
   const el=document.getElementById('levelToast');if(!el)return;
@@ -2991,6 +3001,30 @@ function renderMastery(){
   const shelf=document.getElementById('badgeShelf');shelf.innerHTML=MASTERY_BADGES.map(b=>`<span class="badge ${mastery.earned.includes(b.id)?'earned':''}">${mastery.earned.includes(b.id)?'✓ ':'○ '}${b.label}</span>`).join('');
 }
 window.Mastery={get state(){return mastery;},record:recordMastery,score:masteryForMidi,render:renderMastery};
+
+function coachAdvice(){
+  const recent=mastery.recentOutcomes||[],accuracy=recent.length?recent.reduce((a,b)=>a+b,0)/recent.length:1;
+  const weak=Object.values(mastery.notes).filter(n=>n.attempts>=2).sort((a,b)=>masteryForMidi(a.midi)-masteryForMidi(b.midi))[0];
+  if(recent.length<3)return {kind:'steady',level:Math.min(level,1),title:'A calm place to begin',message:'Read a few notes at your own pace. Nothing here is timed against you.',label:'start gently'};
+  if(recent.length>=5&&accuracy<.65)return {kind:'support',level:Math.max(0,level-1),title:'Make the next few notes lighter',message:weak?`${nn(weak.midi)} is still becoming familiar. We can keep names visible and give it more room.`:'A little more space between ideas will help them settle.',label:'add support'};
+  if(recent.length>=8&&accuracy>.9&&level<5)return {kind:'stretch',level:level+1,title:'You look ready for one small stretch',message:'Your recent reads are steady. The next level adds just one layer of challenge.',label:'try the stretch'};
+  return {kind:'steady',level,title:'Stay with this good pace',message:'This is right at the edge of what you know — a useful place to practice.',label:'keep this setup'};
+}
+function renderCoach(){
+  coachSuggestion=coachAdvice();
+  const title=document.getElementById('coachTitle'),message=document.getElementById('coachMessage'),action=document.getElementById('coachAction');
+  if(title)title.textContent=coachSuggestion.title;if(message)message.textContent=coachSuggestion.message;if(action)action.textContent=coachSuggestion.label;
+  return coachSuggestion;
+}
+function applyCoachSuggestion(){
+  const s=coachSuggestion||coachAdvice();
+  level=Math.max(0,Math.min(5,s.level));
+  if(s.kind==='support'){hintMode='full';adaptiveMode=true;}
+  const ls=document.getElementById('levelSel');if(ls)ls.value=level;
+  applySettingsToControls();saveState();nextExercise();renderCoach();
+  return s;
+}
+window.Coach={advice:coachAdvice,refresh:renderCoach,apply:applyCoachSuggestion,get suggestion(){return coachSuggestion;}};
 
 function getSuggestedDrill(){
   const octEntries=Object.entries(errorStats.octaveErrors).sort((a,b)=>b[1]-a[1]);
@@ -3840,7 +3874,7 @@ function resetStats(){
     byLevel:[{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0},{totalMs:0,count:0}],
     recent:[]};
   rhythmScore={onTime:0,early:0,late:0,missed:0};
-  mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0};
+  mastery={notes:{},speed:[],earned:[],level:0,totalCorrect:0,recentOutcomes:[]};
   try{localStorage.removeItem(MASTERY_KEY);}catch(e){}
   resetPersistentState();updateUI();saveState();
 }
@@ -3858,6 +3892,7 @@ window.addEventListener('load',()=>{
   updateUI();
   updateHabitUI();
   renderMastery();
+  renderCoach();
   nextExercise();
   document.addEventListener('keydown',keyboardPracticeKeyDown);
   document.addEventListener('keyup',keyboardPracticeKeyUp);
