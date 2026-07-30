@@ -62,6 +62,10 @@
   .badge.earned { color:var(--green-dark); border-color:var(--green); background:var(--green-light); }
   .level-toast { position:fixed; left:50%; top:18%; z-index:120; transform:translate(-50%,-12px); padding:12px 18px; border-radius:999px; background:var(--ink); color:var(--bg); opacity:0; pointer-events:none; transition:opacity .2s,transform .3s var(--ease-spring); }
   .level-toast.show { opacity:1; transform:translate(-50%,0); }
+  .glossary-list { display:grid; gap:10px; margin-top:14px; }
+  .glossary-list div { padding:10px 12px; background:var(--bg2); border-radius:var(--radius); }
+  .glossary-list dt { font-weight:600; margin-bottom:3px; }
+  .glossary-list dd { color:var(--ink2); font-size:12px; }
   .title { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
   .subtitle { font-size: 12px; color: var(--ink2); }
   .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
@@ -240,6 +244,7 @@
   <div class="header">
     <div class="title">ChordPath</div>
     <div class="subtitle">sight reading trainer</div>
+    <button onclick="openGlossary()" title="Explain music and practice terms">terms</button>
     <button id="dailyGoalBtn" class="daily-goal" onclick="finishSession()" title="Finish session and view recap">
       <span class="daily-goal-ring" id="dailyGoalRing"><span id="dailyGoalCount">0</span></span>
       <span class="daily-goal-copy"><strong>today's reads</strong><small id="dailyStreak">start a streak</small></span>
@@ -276,13 +281,13 @@
             <option value="grand">grand staff</option>
           </select>
           <select id="hintModeSel" onchange="setHintMode(this.value)" aria-label="hint mode">
-            <option value="full">full labels</option>
-            <option value="landmarks">landmark labels</option>
-            <option value="intervals">interval hints</option>
-            <option value="none">no hints</option>
+            <option value="full">show note names</option>
+            <option value="landmarks">guidepost names only</option>
+            <option value="intervals">show shape hints</option>
+            <option value="none">hide note names</option>
           </select>
-          <label class="chk compact"><input type="checkbox" id="chkForgiving" onchange="setAnswerMode(this.checked)"> forgiving</label>
-          <label class="chk compact"><input type="checkbox" id="chkAdaptive" onchange="setAdaptiveMode(this.checked)"> adaptive</label>
+          <label class="chk compact"><input type="checkbox" id="chkForgiving" onchange="setAnswerMode(this.checked)"> allow extra notes</label>
+          <label class="chk compact"><input type="checkbox" id="chkAdaptive" onchange="setAdaptiveMode(this.checked)"> practice my weak spots</label>
           <button id="fingeringBtn" onclick="toggleFingering()" aria-pressed="true" title="show recommended fingerings (1–5)">fingering</button>
         </div>
         <div class="row">
@@ -320,7 +325,7 @@
         <div class="row" style="gap:6px">
           <button id="micBtn" onclick="toggleMic()">mic off</button>
           <button id="midiBtn" onclick="toggleMidi()">MIDI off</button>
-          <button onclick="simulateCorrect()">simulate correct</button>
+          <button id="hearAnswerBtn" onclick="hearAnswer()" title="Play the written notes without scoring them">hear this</button>
           <span id="timingPill" class="pill" style="display:none"></span>
         </div>
         <div id="hintText" class="label"></div>
@@ -632,6 +637,21 @@
   </div>
 </div>
 <div id="levelToast" class="level-toast" role="status" aria-live="polite"></div>
+
+<div id="glossaryModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="glossaryTitle" onclick="if(event.target===this)closeGlossary()">
+  <div class="modal">
+    <div class="sect" style="margin-top:0">plain-language guide</div>
+    <h2 id="glossaryTitle" style="font:600 22px var(--font-display)">A few useful music words</h2>
+    <dl class="glossary-list">
+      <div><dt>Clef</dt><dd>The symbol that tells you which notes live on the staff.</dd></div>
+      <div><dt>Interval</dt><dd>The distance from one note to another.</dd></div>
+      <div><dt>Octave</dt><dd>The same note name, higher or lower.</dd></div>
+      <div><dt>Inversion</dt><dd>A chord with the same notes arranged in a different order.</dd></div>
+      <div><dt>BPM</dt><dd>Beats per minute — how fast the pulse moves.</dd></div>
+    </dl>
+    <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="accent" onclick="closeGlossary()">got it</button></div>
+  </div>
+</div>
 
 <div id="sessionRecap" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="recapTitle">
   <div class="modal">
@@ -963,7 +983,10 @@ function isLandmarkNote(midi,clefKey){
   return (LANDMARKS[key]||[]).includes(midi);
 }
 function shouldShowNoteLabel(midi,context){
-  if(hintMode==='full')return true;
+  if(hintMode==='full'){
+    if(adaptiveMode&&!isLandmarkNote(midi,(context&&context.clef)||clef)&&masteryForMidi(midi)>=70)return false;
+    return true;
+  }
   if(hintMode==='landmarks')return isLandmarkNote(midi,(context&&context.clef)||clef);
   return false;
 }
@@ -2798,6 +2821,8 @@ function finishSession(){
   document.getElementById('sessionRecap').style.display='flex';
 }
 function closeSessionRecap(){document.getElementById('sessionRecap').style.display='none';}
+function openGlossary(){document.getElementById('glossaryModal').style.display='flex';}
+function closeGlossary(){document.getElementById('glossaryModal').style.display='none';}
 window.Habit={
   get state(){return habit;},
   record:recordHabitRead,
@@ -2978,6 +3003,7 @@ function playNotes(midis){
 }
 
 function simulateCorrect(){playNotes([...targetMidis]);checkAnswer([...targetMidis],performance.now(),{genuine:false})}
+function hearAnswer(){return playNotes([...targetMidis])}
 
 // ——— Microphone ———
 async function toggleMic(){
