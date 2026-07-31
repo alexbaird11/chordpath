@@ -40,13 +40,18 @@ FIELD_LABELS = [
     ("Third Party References", "third_party_references"),
 ]
 
-# Match a label at the start of a line, tolerating leading Markdown heading
-# markers ("#", "##", ...) and surrounding whitespace, followed by a colon.
+# Match a label at the start of a line, tolerating Markdown emphasis/heading
+# markers ("#", "*", "_") and whitespace around the label — the live tracker
+# uses bold labels like "**Issue Name**:" and headings like "## **Issue Name**:".
 _LABEL_ALTERNATION = "|".join(re.escape(label) for label, _ in FIELD_LABELS)
 _LABEL_RE = re.compile(
-    r"^\s*#*\s*(?P<label>" + _LABEL_ALTERNATION + r")\s*:\s*(?P<value>.*)$",
+    r"^[\s#*_]*(?P<label>" + _LABEL_ALTERNATION + r")[\s#*_]*:\s*(?P<value>.*)$",
     re.IGNORECASE,
 )
+
+# A block separator line is "//", possibly wrapped in emphasis/heading markers
+# ("**//**", "//", "## //"). Normalize by removing markers + whitespace.
+_SEPARATOR_STRIP_RE = re.compile(r"[\s*_#]")
 
 _LABEL_TO_KEY = {label.lower(): key for label, key in FIELD_LABELS}
 
@@ -56,7 +61,7 @@ def split_blocks(text: str) -> List[str]:
     blocks: List[str] = []
     current: List[str] = []
     for line in text.splitlines():
-        if line.strip() == "//":
+        if _SEPARATOR_STRIP_RE.sub("", line) == "//":
             blocks.append("\n".join(current))
             current = []
         else:
