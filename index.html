@@ -892,14 +892,17 @@ function drawNoteLabels(ctx,notes,cx,lg,color,bg){
 
 // Width-responsive staff metrics (Part 1). The line gap grows with the container so the
 // staff fills the wider layout; on narrow screens it settles back to the compact size.
-function staffMetrics(W,isGrand){
+// `scale` (default 1) shrinks the whole system uniformly so several read-ahead rows can be
+// stacked and still fit the viewport — every dimension derives from `lg`, so one factor
+// keeps the notation's proportions intact (see pieceRowFitScale / drawPieceStaff).
+function staffMetrics(W,isGrand,scale=1){
   if(isGrand){
-    const lg=Math.max(12,Math.min(19,Math.round(W/52)));
+    const lg=Math.max(12,Math.min(19,Math.round(W/52)))*scale;
     const tTop=Math.round(lg*4.4);
     const bTop=tTop+Math.round(lg*10);
     return{lg,tTop,bTop,H:bTop+lg*4+Math.round(lg*4.2)};
   }
-  const lg=Math.max(14,Math.min(23,Math.round(W/44)));
+  const lg=Math.max(14,Math.min(23,Math.round(W/44)))*scale;
   const tTop=Math.round(lg*4.6);
   return{lg,tTop,H:tTop+lg*4+Math.round(lg*4.8)};
 }
@@ -2392,13 +2395,41 @@ function drawKeySignature(ctx,fifths,x,top,lg,isBass,ink){
   return x+list.length*lg*.72+lg*.6;
 }
 
+// Vertical space the stacked reading grid may occupy without pushing content off-screen.
+// Measured live from the viewport: the room from the staff canvas down to the bottom of the
+// window, minus the chrome that renders below the staff (notation hint, piano strip, feedback
+// and metrics rows) so those stay visible too. Independent of the canvas's own height, so it
+// does not oscillate between renders. Falls back to sane numbers when the layout is not ready.
+function pieceStaffVBudget(canvas){
+  const vh=window.innerHeight||820;
+  const rect=canvas.getBoundingClientRect();
+  const top=Math.max(0,rect.top);
+  const h=sel=>{const e=document.querySelector(sel);return e?e.getBoundingClientRect().height:0;};
+  // chrome below the staff canvas + a margin allowance for the gaps between those blocks
+  const reserve=h('#notationHint')+h('.piano-strip-head')+h('.piano-wrap')
+               +h('.feedback-row')+h('.metrics-row')+48;
+  return Math.max(140,vh-top-reserve);
+}
+
+// Uniform shrink factor so `visN` stacked systems fit `budget` px of vertical space. Returns
+// 1 when the grid already fits (no change). Otherwise scales down proportionally, but never
+// below the factor that would take the line gap under `minLg` px, so the notation stays
+// readable — if even that overflows (a very short window with many rows) the page scrolls as
+// a graceful fallback rather than rendering unreadable staves.
+function pieceRowFitScale(sysH,lg,visN,budget,minLg=9){
+  const natural=sysH*visN;
+  if(natural<=budget||natural<=0||lg<=0)return 1;
+  const floor=Math.min(1,minLg/lg);
+  return Math.max(floor,budget/natural);
+}
+
 // Break a piece into staff systems (rows) plus the shared layout metrics used to render
 // them. Extracted from drawPieceStaff so the packing rule is a single, testable unit.
 //   mpr = 0  → auto: fit as many measures per row as the width allows (proportional widths)
 //   mpr >= 1 → fixed: exactly `mpr` measures per row, sharing the row width equally
-function buildPieceLines(piece,W,mpr){
+function buildPieceLines(piece,W,mpr,scale=1){
   const grand=pieceIsGrand(piece);
-  const met=staffMetrics(W,grand);
+  const met=staffMetrics(W,grand,scale);
   const lg=met.lg;
   const fifths=(piece.keySig&&piece.keySig.fifths)||0;
   const slotsOf=piece.measures.map(mm=>{
@@ -2432,7 +2463,19 @@ function drawPieceStaff(){
   const grand=pieceIsGrand(piece);
   const topIsBass=!grand&&pieceHasHand(piece,'L');
   const mpr=pieceMeasuresPerRow;
-  const {lines,lg,met,headW,fifths,slotsOf,noteSpace,autoW}=buildPieceLines(piece,W,mpr);
+  // Fit the reading grid to the available height. Pass 1 lays the music out at the natural
+  // width-based size to learn how many systems it makes and how tall one is; then shrink the
+  // whole grid uniformly so the chosen number of rows fits the viewport without scrolling
+  // (floored for readability). Pass 2 re-packs at the fitted size so measure widths stay
+  // consistent with the smaller notation.
+  let bl=buildPieceLines(piece,W,mpr);
+  let visN=Math.max(1,Math.min(pieceViewRows,bl.lines.length));
+  const fit=pieceRowFitScale(bl.met.H,bl.lg,visN,pieceStaffVBudget(canvas));
+  if(fit<1){
+    bl=buildPieceLines(piece,W,mpr,fit);
+    visN=Math.max(1,Math.min(pieceViewRows,bl.lines.length));
+  }
+  const {lines,lg,met,headW,fifths,slotsOf,noteSpace,autoW}=bl;
   const scalePcs=keyScalePcs(fifths);
   const leftPad=lg*1.2,rightPad=lg*.9;
   // Per-measure width + note slot spacing. Auto keeps width-proportional measures; a fixed
@@ -2453,21 +2496,21 @@ function drawPieceStaff(){
   const liCur=lines.findIndex(L=>curMi>=L.start&&curMi<=L.end);
   const li=liCur<0?0:liCur;
 
-  // Show up to `pieceViewRows` systems at once. Keep the current line visible and place
-  // the upcoming lines beneath it so the reader can look ahead — clamp the window at the
-  // end of the piece so it stays full when there is enough music to fill it.
-  const rows=Math.max(1,Math.min(pieceViewRows,lines.length));
-  const winStart=Math.min(li,Math.max(0,lines.length-rows));
-  const winEnd=Math.min(lines.length,winStart+rows);
-  const visN=winEnd-winStart;
+  // Show up to `visN` systems at once (already clamped to pieceViewRows and the fitted line
+  // count above). Keep the current line visible and place the upcoming lines beneath it so
+  // the reader can look ahead — clamp the window at the end of the piece so it stays full
+  // when there is enough music to fill it.
+  const winStart=Math.min(li,Math.max(0,lines.length-visN));
+  const winEnd=Math.min(lines.length,winStart+visN);
+  const visRows=winEnd-winStart;
   const sysH=met.H;
-  const totalH=visN*sysH;
+  const totalH=visRows*sysH;
 
   const ctx=setupHiDPICanvas(canvas,W,totalH);
   ctx.clearRect(0,0,W,totalH);
   const colors=getColors();
   const P={piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,widthOf,slotSpaceOf,leftPad,W};
-  for(let r=0;r<visN;r++){
+  for(let r=0;r<visRows;r++){
     drawPieceSystem(ctx,P,lines[winStart+r],r*sysH,curMi,step,finished);
   }
 
@@ -2475,8 +2518,8 @@ function drawPieceStaff(){
   const {ink3}=colors;
   ctx.fillStyle=ink3;ctx.font='10px IBM Plex Mono';ctx.textAlign='right';
   const label=lines.length<=1?''
-    :visN>=lines.length?`all ${lines.length} lines`
-    :visN===1?`line ${winStart+1}/${lines.length}`
+    :visRows>=lines.length?`all ${lines.length} lines`
+    :visRows===1?`line ${winStart+1}/${lines.length}`
     :`lines ${winStart+1}–${winEnd}/${lines.length}`;
   if(label)ctx.fillText(label,W-8,12);
   ctx.textAlign='left';

@@ -209,6 +209,9 @@ async function loadLongPiece(page: any) {
 
 test('piece practice renders a configurable number of rows (read-ahead)', async ({ page }) => {
   const id = await loadLongPiece(page);
+  // A tall window so every row fits at natural size — this asserts the "more rows show more
+  // music" behaviour when there is room; the fit-to-height shrink is covered separately below.
+  await page.setViewportSize({ width: 1280, height: 1600 });
   const r = await page.evaluate((pid) => {
     const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
     startPiecePractice(pid, { hand: 'both' });
@@ -310,6 +313,9 @@ test('auto (0) still wraps by width rather than a fixed count', async ({ page })
 
 test('measures/row = 4 with rows = 3 shows a 4×3 reading grid (target state)', async ({ page }) => {
   const id = await loadLongPiece(page);
+  // Tall window so the 4×3 grid renders at natural size (fit-to-height would otherwise shrink
+  // it to stay on screen — that path is asserted in the fit-to-viewport tests below).
+  await page.setViewportSize({ width: 1280, height: 1600 });
   const r = await page.evaluate((pid) => {
     const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
     startPiecePractice(pid, { hand: 'both' });
@@ -353,4 +359,66 @@ test('the measures/row selector reflects the restored setting', async ({ page })
   });
   expect(r.six).toBe('6');
   expect(r.auto).toBe('auto');
+});
+
+// ——— Fit-to-height reading grid (Practice display sizes to the viewport) ———
+
+test('pieceRowFitScale returns 1 when the grid already fits, else shrinks, floored for readability', async ({ page }) => {
+  const r = await page.evaluate(() => ({
+    fits: pieceRowFitScale(100, 20, 3, 400),   // 3×100=300 ≤ 400 → no shrink
+    shrinks: pieceRowFitScale(100, 20, 3, 150), // 300 > 150 → 150/300 = 0.5 (above floor 9/20)
+    floored: pieceRowFitScale(100, 20, 3, 30),  // tiny budget → floored at 9/20 = 0.45
+  }));
+  expect(r.fits).toBe(1);
+  expect(r.shrinks).toBeCloseTo(0.5, 5);
+  expect(r.floored).toBeCloseTo(0.45, 5); // never shrinks the line gap below 9px
+});
+
+test('the multi-row reading grid fits the viewport — all rows are visible without scrolling', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  await page.setViewportSize({ width: 1280, height: 900 }); // a normal laptop content height
+  const r = await page.evaluate((pid) => {
+    startPiecePractice(pid, { hand: 'both' });
+    setPieceMeasuresPerRow(4);
+    const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+    const bottomFor = (rows: number) => { setPieceViewRows(rows); return canvas.getBoundingClientRect().bottom; };
+    return { one: bottomFor(1), two: bottomFor(2), three: bottomFor(3), vh: window.innerHeight };
+  }, id);
+  // the staff no longer runs off the bottom of the screen — every selected row stays on-screen
+  expect(r.one).toBeLessThanOrEqual(r.vh);
+  expect(r.two).toBeLessThanOrEqual(r.vh);
+  expect(r.three).toBeLessThanOrEqual(r.vh);
+});
+
+test('adding rows shrinks each row so they all stay on screen (dynamic size adjustment)', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  await page.setViewportSize({ width: 1280, height: 760 }); // constrained height forces the fit
+  const r = await page.evaluate((pid) => {
+    startPiecePractice(pid, { hand: 'both' });
+    setPieceMeasuresPerRow(4);
+    const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+    const perRow = (rows: number) => { setPieceViewRows(rows); return parseFloat(canvas.style.height) / rows; };
+    return { p1: perRow(1), p2: perRow(2), p4: perRow(4) };
+  }, id);
+  // each added row makes every row smaller — the display dynamically reduces size, not scrolls
+  expect(r.p2).toBeLessThan(r.p1);
+  expect(r.p4).toBeLessThan(r.p2);
+});
+
+test('a single row keeps its natural size when it already fits (no needless shrinking)', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  const heightAt = (h: number) => page.setViewportSize({ width: 1280, height: h }).then(() =>
+    page.evaluate((pid) => {
+      startPiecePractice(pid, { hand: 'both' });
+      setPieceViewRows(1);
+      const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+      // the natural, width-based single-system height for comparison
+      const natural = staffMetrics(canvas.clientWidth, false).H;
+      return { css: parseFloat(canvas.style.height), natural };
+    }, id));
+  const tall = await heightAt(1600);
+  const cramped = await heightAt(500);
+  // one row is drawn at its natural size on a tall window; only a too-short window shrinks it
+  expect(tall.css).toBeCloseTo(tall.natural, 0);
+  expect(cramped.css).toBeLessThan(tall.css);
 });
