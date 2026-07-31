@@ -181,3 +181,84 @@ test('piece staff renders without throwing and marks the current step', async ({
   });
   expect(ok).toBe(true);
 });
+
+// ——— Configurable practice view (multi-row / read-ahead) ———
+
+// A long single-hand piece that wraps into several staff systems (rows), so the
+// number of rows actually changes what is on screen.
+async function loadLongPiece(page: any) {
+  return page.evaluate(() => {
+    const measures: any[] = [];
+    for (let i = 0; i < 24; i++) {
+      measures.push({
+        number: i + 1, events: [
+          { onset: 0, duration: 1, midis: [60], hand: 'R', fingerings: null },
+          { onset: 1, duration: 1, midis: [62], hand: 'R', fingerings: null },
+          { onset: 2, duration: 1, midis: [64], hand: 'R', fingerings: null },
+          { onset: 3, duration: 1, midis: [65], hand: 'R', fingerings: null },
+        ],
+      });
+    }
+    return importPieceObject({
+      title: 'Long Piece', source: 'musicxml',
+      keySig: { fifths: 0, mode: 'major', tonic: 0, name: 'C major', detected: false },
+      timeSig: { beats: 4, beatType: 4 }, tempo: 100, measures,
+    } as any).id;
+  });
+}
+
+test('piece practice renders a configurable number of rows (read-ahead)', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  const r = await page.evaluate((pid) => {
+    const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+    startPiecePractice(pid, { hand: 'both' });
+    const h = (n: number) => { setPieceViewRows(n); return parseFloat(canvas.style.height); };
+    return { h1: h(1), h2: h(2), h3: h(3) };
+  }, id);
+  // more rows → a taller reading surface (more music visible at once)
+  expect(r.h2).toBeGreaterThan(r.h1);
+  expect(r.h3).toBeGreaterThan(r.h2);
+});
+
+test('the current line stays visible as the cursor advances across systems', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  const visible = await page.evaluate((pid) => {
+    startPiecePractice(pid, { hand: 'both' });
+    setPieceViewRows(2);
+    const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+    // advance to a step deep in the piece, then confirm the canvas still renders
+    // a bounded window (height stays ~2 systems, not the whole piece)
+    const twoRowH = parseFloat(canvas.style.height);
+    pieceCursor = pieceQueue.length - 2; // near the end
+    setPieceTarget(); // re-renders
+    const endH = parseFloat(canvas.style.height);
+    return { twoRowH, endH };
+  }, id);
+  // the window is bounded — the view never grows to the full piece height
+  expect(Math.abs(visible.endH - visible.twoRowH)).toBeLessThan(1);
+});
+
+test('pieceViewRows clamps to 1–3 and persists to localStorage', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    setPieceViewRows(9);
+    const hi = pieceViewRows;
+    setPieceViewRows(0);
+    const lo = pieceViewRows;
+    setPieceViewRows(3);
+    const saved = JSON.parse(localStorage.getItem('chordpath.v3') || '{}');
+    return { hi, lo, savedRows: saved.settings && saved.settings.pieceViewRows };
+  });
+  expect(r.hi).toBe(3);
+  expect(r.lo).toBe(1);
+  expect(r.savedRows).toBe(3);
+});
+
+test('the rows selector reflects the restored setting', async ({ page }) => {
+  const val = await page.evaluate(() => {
+    setPieceViewRows(3);
+    (document.getElementById('pieceRowsSel') as HTMLSelectElement).value = '1'; // desync
+    applySettingsToControls();
+    return (document.getElementById('pieceRowsSel') as HTMLSelectElement).value;
+  });
+  expect(val).toBe('3');
+});

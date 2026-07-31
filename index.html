@@ -105,6 +105,8 @@
   .piece-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .piece-banner .t { font-size: 12px; color: var(--ink); }
   .piece-banner .m { font-size: 11px; color: var(--ink2); }
+  .piece-rows { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink2); }
+  .piece-rows select { font-size: 11px; padding: 3px 6px; }
 
   /* ——— Pieces tab: upload & library ——— */
   .upload-drop { border: 1.5px dashed var(--border2); border-radius: var(--radius-lg); padding: 26px 16px; text-align: center; cursor: pointer; color: var(--ink2); transition: border-color .15s, background .15s; }
@@ -194,6 +196,13 @@
         <div id="pieceBanner" class="piece-banner" style="display:none">
           <span class="t" id="pieceBannerTitle"></span>
           <span class="row" style="gap:8px">
+            <label class="piece-rows">rows
+              <select id="pieceRowsSel" onchange="setPieceViewRows(+this.value)" aria-label="rows of music shown at once" title="how many lines of music to display at once (read ahead)">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
             <span class="m" id="pieceBannerPos"></span>
             <button onclick="exitPiecePractice()">exit piece</button>
           </span>
@@ -572,6 +581,7 @@ let currentPiece=null;         // piece being practiced
 let pieceQueue=[];             // flattened playable steps for the active practice run
 let pieceCursor=0;
 let pieceOpts={measures:null,hand:'both',tempoPct:100,assess:false};
+let pieceViewRows=2;           // how many staff systems (rows) to show at once in piece practice (1–3)
 let assessRun=null;            // {perMeasure:{n:{attempts,correct,totalMs}}}
 
 let exerciseStartedAt=null;
@@ -2233,6 +2243,17 @@ function updatePieceBanner(){
   pos.textContent=`measure ${step.measure} · step ${Math.min(pieceCursor+1,pieceQueue.length)}/${pieceQueue.length}`;
 }
 
+// How many staff systems (rows) to show at once during piece practice. More rows let the
+// reader look ahead — the core sight-reading skill — while a lower count keeps the view
+// compact and cognitively light. Clamped 1–3, persisted, and re-rendered live.
+function setPieceViewRows(n){
+  pieceViewRows=Math.max(1,Math.min(3,Math.round(n)||1));
+  const sel=document.getElementById('pieceRowsSel');
+  if(sel)sel.value=String(pieceViewRows);
+  if(practiceMode==='piece'&&currentPiece)drawStaff();
+  saveState();
+}
+
 function advancePiece(){
   pieceCursor++;
   if(pieceCursor>=pieceQueue.length){finishPieceRun();return;}
@@ -2355,10 +2376,10 @@ function drawPieceStaff(){
   const grand=pieceIsGrand(piece);
   const topIsBass=!grand&&pieceHasHand(piece,'L');
   const met=staffMetrics(W,grand);
-  const lg=met.lg,tTop=met.tTop,bTop=grand?met.bTop:null;
+  const lg=met.lg;
   const fifths=(piece.keySig&&piece.keySig.fifths)||0;
   const scalePcs=keyScalePcs(fifths);
-  // layout: pack measures into lines, then render the line holding the cursor
+  // layout: pack measures into lines (systems)
   const slotsOf=piece.measures.map(mm=>{
     const set=new Set();
     mm.events.forEach(e=>set.add(e.onset.toFixed(4)));
@@ -2377,24 +2398,55 @@ function drawPieceStaff(){
   const finished=pieceCursor>=pieceQueue.length;
   const step=pieceQueue[Math.min(pieceCursor,pieceQueue.length-1)];
   const curMi=step?step.measureIdx:0;
-  const line=lines.find(L=>curMi>=L.start&&curMi<=L.end)||lines[0];
+  const liCur=lines.findIndex(L=>curMi>=L.start&&curMi<=L.end);
+  const li=liCur<0?0:liCur;
 
-  const ctx=setupHiDPICanvas(canvas,W,met.H);
-  ctx.clearRect(0,0,W,met.H);
+  // Show up to `pieceViewRows` systems at once. Keep the current line visible and place
+  // the upcoming lines beneath it so the reader can look ahead — clamp the window at the
+  // end of the piece so it stays full when there is enough music to fill it.
+  const rows=Math.max(1,Math.min(pieceViewRows,lines.length));
+  const winStart=Math.min(li,Math.max(0,lines.length-rows));
+  const winEnd=Math.min(lines.length,winStart+rows);
+  const visN=winEnd-winStart;
+  const sysH=met.H;
+  const totalH=visN*sysH;
+
+  const ctx=setupHiDPICanvas(canvas,W,totalH);
+  ctx.clearRect(0,0,W,totalH);
   const colors=getColors();
+  const P={piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,mW,noteSpace,W};
+  for(let r=0;r<visN;r++){
+    drawPieceSystem(ctx,P,lines[winStart+r],r*sysH,curMi,step,finished);
+  }
+
+  // window indicator (e.g. "lines 2–3/5", "line 2/5", or "all 3 lines")
+  const {ink3}=colors;
+  ctx.fillStyle=ink3;ctx.font='10px IBM Plex Mono';ctx.textAlign='right';
+  const label=lines.length<=1?''
+    :visN>=lines.length?`all ${lines.length} lines`
+    :visN===1?`line ${winStart+1}/${lines.length}`
+    :`lines ${winStart+1}–${winEnd}/${lines.length}`;
+  if(label)ctx.fillText(label,W-8,12);
+  ctx.textAlign='left';
+}
+
+// Render a single staff system (one line of measures) at vertical offset `yOff`. Extracted
+// from drawPieceStaff so the practice view can stack several systems for reading ahead.
+function drawPieceSystem(ctx,P,line,yOff,curMi,step,finished){
+  const {piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,mW,noteSpace,W}=P;
   const {ink,ink2,ink3,green,bg,greenLight}=colors;
   const doneColor='#9FE1CB';
+  const tTop=met.tTop+yOff;
+  const bTop=grand?met.bTop+yOff:null;
   const staffBottom=(grand?bTop:tTop)+4*lg;
 
-  // current-measure highlight band goes underneath the staff lines
-  if(!finished){
+  // current-measure highlight band goes underneath the staff lines (only on its line)
+  if(!finished&&curMi>=line.start&&curMi<=line.end){
     let bandX=headW;
     for(let mi=line.start;mi<curMi;mi++)bandX+=mW(mi);
-    if(curMi>=line.start&&curMi<=line.end){
-      ctx.fillStyle=greenLight;ctx.globalAlpha=.4;
-      ctx.fillRect(bandX-lg*.4,tTop-lg*2.4,mW(curMi),staffBottom-tTop+lg*4.4);
-      ctx.globalAlpha=1;
-    }
+    ctx.fillStyle=greenLight;ctx.globalAlpha=.4;
+    ctx.fillRect(bandX-lg*.4,tTop-lg*2.4,mW(curMi),staffBottom-tTop+lg*4.4);
+    ctx.globalAlpha=1;
   }
 
   drawLines(ctx,W,tTop,lg,ink);
@@ -2467,11 +2519,6 @@ function drawPieceStaff(){
     });
     xm+=wM;
   }
-  // line indicator (e.g. "line 2/4")
-  const li=lines.indexOf(line);
-  ctx.fillStyle=ink3;ctx.font='10px IBM Plex Mono';ctx.textAlign='right';
-  ctx.fillText(`line ${li+1}/${lines.length}`,W-8,12);
-  ctx.textAlign='left';
 }
 
 // ——— Rhythm timing classification ———
@@ -2660,7 +2707,7 @@ function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       score,levelScores,levelAttempts,missedNotes,errorStats,responseStats,rhythmScore,
-      settings:{level,clef,hintMode,answerMode,adaptiveMode,showFingering}
+      settings:{level,clef,hintMode,answerMode,adaptiveMode,showFingering,pieceViewRows}
     }));
   }catch(e){}
 }
@@ -2684,6 +2731,7 @@ function loadState(){
       if(st.answerMode)answerMode=st.answerMode;
       adaptiveMode=!!st.adaptiveMode;
       if(typeof st.showFingering==='boolean')showFingering=st.showFingering;
+      if(typeof st.pieceViewRows==='number')pieceViewRows=Math.max(1,Math.min(3,Math.round(st.pieceViewRows)));
     }
   }catch(e){}
 }
@@ -2697,6 +2745,7 @@ function applySettingsToControls(){
   const ca=document.getElementById('chkAdaptive');if(ca)ca.checked=adaptiveMode;
   const fb=document.getElementById('fingeringBtn');
   if(fb){fb.classList.toggle('on',showFingering);fb.setAttribute('aria-pressed',String(showFingering));}
+  const pr=document.getElementById('pieceRowsSel');if(pr)pr.value=String(pieceViewRows);
 }
 
 function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
