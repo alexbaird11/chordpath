@@ -3000,15 +3000,23 @@ function renderScore(canvas,piece,W,opts){
         const top=(grand&&ev.hand==='L')?bTop:tTop;
         const ex=noteX(mx,wM,ev.onset);
         const selHit=opts.sel&&opts.sel.mi===it.mi&&opts.sel.hand===ev.hand&&Math.abs(opts.sel.onset-ev.onset)<1e-6;
-        if(selHit){ctx.fillStyle=greenLight;ctx.globalAlpha=.6;ctx.fillRect(ex-lg*0.9,top-lg*2.2,lg*1.8,4*lg+lg*4.2);ctx.globalAlpha=1;}
+        // selNote: one notehead within a multi-note event is selected; selWhole: the whole event
+        const selNote=selHit&&opts.sel.midi!=null&&ev.midis&&ev.midis.length>1&&ev.midis.includes(opts.sel.midi);
+        const selWhole=selHit&&!selNote;
+        if(selWhole){ctx.fillStyle=greenLight;ctx.globalAlpha=.6;ctx.fillRect(ex-lg*0.9,top-lg*2.2,lg*1.8,4*lg+lg*4.2);ctx.globalAlpha=1;}
         if(ev.rest||!ev.midis.length){
           ctx.fillStyle=selHit?green:ink;ctx.font=`${Math.round(lg*1.9)}px serif`;ctx.textAlign='center';
           ctx.fillText(nearestRestGlyph(ev.duration),ex,top+lg*2.2);ctx.textAlign='left';
         } else {
           const heads=[];
           ev.midis.forEach(mm=>{
+            const noteSel=selWhole||(selNote&&mm===opts.sel.midi);
             const perNote={noAccidental:scalePcs.includes(((mm%12)+12)%12),open:ev.duration>=2,noStem:ev.duration>=4};
-            drawNote(ctx,mm,ex,top,lg,selHit?green:ink,selHit?green:ink,true,isBass,perNote);
+            drawNote(ctx,mm,ex,top,lg,noteSel?green:ink,noteSel?green:ink,true,isBass,perNote);
+            if(selNote&&mm===opts.sel.midi){   // ring the individually-selected notehead
+              ctx.save();ctx.strokeStyle=green;ctx.lineWidth=Math.max(1.5,lg*0.12);ctx.globalAlpha=.9;
+              ctx.beginPath();ctx.arc(ex,noteY(mm,top,lg,isBass),lg*0.95,0,Math.PI*2);ctx.stroke();ctx.restore();
+            }
             heads.push({midi:mm,x:ex,y:noteY(mm,top,lg,isBass)});
           });
           layout.events.push({mi:it.mi,hand:ev.hand,onset:ev.onset,duration:ev.duration,x:ex,top,isBass,heads,dyn:ev.dyn});
@@ -3104,6 +3112,11 @@ function edFindEvent(sel){
   const m=ED.piece.measures[sel.mi];if(!m)return null;
   return m.events.find(e=>e.hand===sel.hand&&Math.abs(e.onset-sel.onset)<1e-6)||null;
 }
+// True when the selection targets one notehead inside a multi-note event. In that
+// case edits act on ED.sel.midi alone; otherwise they act on the whole event.
+function edSingleNoteSel(ev){
+  return !!(ED.sel&&ED.sel.midi!=null&&ev&&ev.midis&&ev.midis.length>1&&ev.midis.includes(ED.sel.midi));
+}
 function editorPlaceNote(mi,hand,onset,midi,dur,rest){
   const m=ED.piece.measures[mi];if(!m)return null;
   let ev=m.events.find(e=>e.hand===hand&&Math.abs(e.onset-onset)<1e-6);
@@ -3128,11 +3141,23 @@ function editorPlaceNote(mi,hand,onset,midi,dur,rest){
 function editorDeleteSelected(){
   const ev=edFindEvent(ED.sel);if(!ev)return;
   const m=ED.piece.measures[ED.sel.mi];
+  if(edSingleNoteSel(ev)){                 // remove just the picked note; keep the rest of the chord
+    const i=ev.midis.indexOf(ED.sel.midi);
+    ev.midis.splice(i,1);
+    if(ev.fingerings&&ev.fingerings.length>i)ev.fingerings.splice(i,1);
+    ED.sel.midi=null;edCommit();return;
+  }
   m.events=m.events.filter(e=>e!==ev);
   ED.sel=null;edCommit();
 }
 function editorNudgePitch(dir){
   const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
+  if(edSingleNoteSel(ev)){                 // move only the picked note within the chord
+    const from=ED.sel.midi,to=diatonicNudge(from,dir);
+    if(to===from||ev.midis.includes(to))return;   // no-op or would collide with a sibling note
+    ev.midis=ev.midis.map(m=>m===from?to:m).sort((a,b)=>a-b);
+    ED.sel.midi=to;ev.manual=false;edCommit();return;
+  }
   ev.midis=ev.midis.map(m=>diatonicNudge(m,dir)).sort((a,b)=>a-b);
   ev.manual=false;edCommit();
 }
@@ -3143,13 +3168,25 @@ function editorSetDuration(dur){
 function editorApplyAccidental(acc){
   const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
   // acc: relative semitone shift applied to the diatonic pitch of each notehead
+  if(edSingleNoteSel(ev)){                 // accidental on just the picked note
+    const from=ED.sel.midi,to=staffPosToMidi(midiToStaffPos(from))+acc;
+    if(to!==from&&ev.midis.includes(to))return;   // would collide with a sibling note
+    ev.midis=ev.midis.map(m=>m===from?to:m).sort((a,b)=>a-b);
+    ED.sel.midi=to;edCommit();return;
+  }
   ev.midis=ev.midis.map(m=>staffPosToMidi(midiToStaffPos(m))+acc).sort((a,b)=>a-b);
   edCommit();
 }
 function editorSetFingering(finger){
   const ev=edFindEvent(ED.sel);if(!ev||!ev.midis.length)return;
   const sorted=[...ev.midis].sort((a,b)=>a-b);
-  ev.fingerings=sorted.map(()=>finger);
+  if(edSingleNoteSel(ev)){                 // fingering on just the picked note
+    if(!ev.fingerings||ev.fingerings.length!==sorted.length)ev.fingerings=sorted.map(()=>null);
+    const i=sorted.indexOf(ED.sel.midi);
+    if(i>=0)ev.fingerings[i]=finger;
+  } else {
+    ev.fingerings=sorted.map(()=>finger);
+  }
   ev.manual=true;edCommit();
 }
 function editorSetDynamic(dyn){
@@ -3279,7 +3316,7 @@ function edHitNote(pt){
   const R=L.lg*0.8;let best=null,bd=R*R;
   L.events.forEach(ev=>ev.heads.forEach(hd=>{
     const dx=pt.x-hd.x,dy=pt.y-hd.y,d=dx*dx+dy*dy;
-    if(d<bd){bd=d;best=ev;}
+    if(d<bd){bd=d;best={ev,midi:hd.midi};}   // remember which notehead was hit, not just the event
   }));
   return best;
 }
@@ -3317,7 +3354,10 @@ function edMouseDown(e){
   const pt=edCanvasPoint(e);
   const hit=edHitNote(pt);
   if(hit){
-    ED.sel={mi:hit.mi,hand:hit.hand,onset:hit.onset};
+    // Select the individual notehead that was clicked so pitch/delete/accidental
+    // operations can target one note within a chord (dyad/triad/…), not the whole
+    // sonority. `midi` identifies the note within the event; null == whole event.
+    ED.sel={mi:hit.ev.mi,hand:hit.ev.hand,onset:hit.ev.onset,midi:hit.midi};
     ED.drag={sel:ED.sel,startY:pt.y,moved:false};
     edRender();
     e.preventDefault();return;
