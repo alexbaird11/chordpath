@@ -1,0 +1,57 @@
+# OpenAI / Codex agent contract for the ChordPath Issue-to-PR workflow.
+# This mirrors SKILL.md so the same workflow can run on an OpenAI runtime.
+# It documents the agent's contract; the Claude Code skill does not execute it.
+
+name: chordpath-issue-pr
+description: >-
+  Read the ChordPath issue tracker (read-only), select a coherent batch of
+  related issues, implement them on a feature branch, and open a DRAFT pull
+  request against alexbaird11/chordpath.
+
+model: gpt-4.1
+temperature: 0.2
+
+permissions:
+  google:
+    access: read-only          # never edit, comment, delete, or reshare the tracker
+    scopes:
+      - drive.readonly
+      - documents.readonly
+  github:
+    repository: alexbaird11/chordpath
+    actions:
+      - read
+      - push_branch
+      - open_pull_request       # drafts only
+
+inputs:
+  tracker:
+    type: google_doc
+    title: "ChordPath Issues"
+    format: text                # issue blocks separated by a line containing only "//"
+  repository: alexbaird11/chordpath
+
+tools:
+  - name: read_tracker
+    description: Fetch the "ChordPath Issues" doc read-only (Drive/Docs API, or public export fallback).
+  - name: parse_issue_tracker
+    description: Run scripts/parse_issue_tracker.py to turn tracker text into structured, grouped issues.
+    command: "python3 scripts/parse_issue_tracker.py --group"
+  - name: git
+    description: Create a feature branch, commit changes, push.
+  - name: open_pull_request
+    description: Open a DRAFT pull request; never mark ready-for-review automatically.
+
+instructions: |
+  1. Read the "ChordPath Issues" tracker read-only. Do not modify it in any way.
+  2. Parse it with scripts/parse_issue_tracker.py and group by workflow.
+  3. Select ONE coherent batch (issues sharing a workflow or subsystem).
+  4. Implement the batch on a dedicated feature branch, matching existing code
+     style and updating tests where the repo has coverage.
+  5. Open a DRAFT pull request whose body lists every tracked issue addressed.
+  6. Stop. A human reviews and un-drafts the PR.
+
+guardrails:
+  - Read-only Google access; never edit/comment/delete/reshare the tracker.
+  - Pull requests are always opened as drafts.
+  - Implement only what the selected batch covers.
