@@ -196,11 +196,21 @@
         <div id="pieceBanner" class="piece-banner" style="display:none">
           <span class="t" id="pieceBannerTitle"></span>
           <span class="row" style="gap:8px">
+            <label class="piece-rows">measures/row
+              <select id="pieceMprSel" onchange="setPieceMeasuresPerRow(this.value)" aria-label="measures per row" title="how many measures to pack into each row (auto fits by width)">
+                <option value="auto">auto</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+              </select>
+            </label>
             <label class="piece-rows">rows
-              <select id="pieceRowsSel" onchange="setPieceViewRows(+this.value)" aria-label="rows of music shown at once" title="how many lines of music to display at once (read ahead)">
+              <select id="pieceRowsSel" onchange="setPieceViewRows(+this.value)" aria-label="rows of music shown at once" title="how many rows of music to display at once (read ahead)">
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
+                <option value="4">4</option>
               </select>
             </label>
             <span class="m" id="pieceBannerPos"></span>
@@ -581,7 +591,8 @@ let currentPiece=null;         // piece being practiced
 let pieceQueue=[];             // flattened playable steps for the active practice run
 let pieceCursor=0;
 let pieceOpts={measures:null,hand:'both',tempoPct:100,assess:false};
-let pieceViewRows=2;           // how many staff systems (rows) to show at once in piece practice (1–3)
+let pieceViewRows=2;           // how many staff systems (rows) to show at once in piece practice (1–4)
+let pieceMeasuresPerRow=0;     // measures packed into each row: 0 = auto (fit by width), or a fixed count
 let assessRun=null;            // {perMeasure:{n:{attempts,correct,totalMs}}}
 
 let exerciseStartedAt=null;
@@ -2245,11 +2256,24 @@ function updatePieceBanner(){
 
 // How many staff systems (rows) to show at once during piece practice. More rows let the
 // reader look ahead — the core sight-reading skill — while a lower count keeps the view
-// compact and cognitively light. Clamped 1–3, persisted, and re-rendered live.
+// compact and cognitively light. Clamped 1–4, persisted, and re-rendered live.
 function setPieceViewRows(n){
-  pieceViewRows=Math.max(1,Math.min(3,Math.round(n)||1));
+  pieceViewRows=Math.max(1,Math.min(4,Math.round(n)||1));
   const sel=document.getElementById('pieceRowsSel');
   if(sel)sel.value=String(pieceViewRows);
+  if(practiceMode==='piece'&&currentPiece)drawStaff();
+  saveState();
+}
+
+// How many measures to pack into each row. 'auto' (0) fits as many as the width allows —
+// best readability; a fixed count (2–8) forces that many per row by sharing the row width,
+// letting the reader see more of the piece at once (at tighter note spacing). Together with
+// the rows control this shapes the practice reading grid. Persisted, re-rendered live.
+function setPieceMeasuresPerRow(v){
+  const n=(v==='auto'||v===0||v==null)?0:Math.max(1,Math.min(8,Math.round(+v)||0));
+  pieceMeasuresPerRow=n;
+  const sel=document.getElementById('pieceMprSel');
+  if(sel)sel.value=n?String(n):'auto';
   if(practiceMode==='piece'&&currentPiece)drawStaff();
   saveState();
 }
@@ -2368,18 +2392,15 @@ function drawKeySignature(ctx,fifths,x,top,lg,isBass,ink){
   return x+list.length*lg*.72+lg*.6;
 }
 
-function drawPieceStaff(){
-  const canvas=document.getElementById('staffCanvas');
-  canvas.style.width='';
-  const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
-  const piece=currentPiece;
+// Break a piece into staff systems (rows) plus the shared layout metrics used to render
+// them. Extracted from drawPieceStaff so the packing rule is a single, testable unit.
+//   mpr = 0  → auto: fit as many measures per row as the width allows (proportional widths)
+//   mpr >= 1 → fixed: exactly `mpr` measures per row, sharing the row width equally
+function buildPieceLines(piece,W,mpr){
   const grand=pieceIsGrand(piece);
-  const topIsBass=!grand&&pieceHasHand(piece,'L');
   const met=staffMetrics(W,grand);
   const lg=met.lg;
   const fifths=(piece.keySig&&piece.keySig.fifths)||0;
-  const scalePcs=keyScalePcs(fifths);
-  // layout: pack measures into lines (systems)
   const slotsOf=piece.measures.map(mm=>{
     const set=new Set();
     mm.events.forEach(e=>set.add(e.onset.toFixed(4)));
@@ -2387,14 +2408,45 @@ function drawPieceStaff(){
   });
   const noteSpace=lg*3.2;
   const headW=60+lg*1.2+Math.abs(fifths)*lg*.72+lg*3.2;
-  const mW=i=>slotsOf[i]*noteSpace+lg*1.8;
+  const autoW=i=>slotsOf[i]*noteSpace+lg*1.8;
+  const n=piece.measures.length;
   const lines=[];
-  let cur={start:0,end:0},x=headW;
-  for(let i=0;i<piece.measures.length;i++){
-    if(i>cur.start&&x+mW(i)>W-14){lines.push(cur);cur={start:i,end:i};x=headW;}
-    cur.end=i;x+=mW(i);
+  if(mpr>=1){
+    for(let s=0;s<n;s+=mpr)lines.push({start:s,end:Math.min(s+mpr-1,n-1)});
+  } else {
+    let cur={start:0,end:0},x=headW;
+    for(let i=0;i<n;i++){
+      if(i>cur.start&&x+autoW(i)>W-14){lines.push(cur);cur={start:i,end:i};x=headW;}
+      cur.end=i;x+=autoW(i);
+    }
+    lines.push(cur);
   }
-  lines.push(cur);
+  return {lines,lg,met,headW,fifths,slotsOf,noteSpace,autoW};
+}
+
+function drawPieceStaff(){
+  const canvas=document.getElementById('staffCanvas');
+  canvas.style.width='';
+  const W=canvas.clientWidth||canvas.parentElement.clientWidth||600;
+  const piece=currentPiece;
+  const grand=pieceIsGrand(piece);
+  const topIsBass=!grand&&pieceHasHand(piece,'L');
+  const mpr=pieceMeasuresPerRow;
+  const {lines,lg,met,headW,fifths,slotsOf,noteSpace,autoW}=buildPieceLines(piece,W,mpr);
+  const scalePcs=keyScalePcs(fifths);
+  const leftPad=lg*1.2,rightPad=lg*.9;
+  // Per-measure width + note slot spacing. Auto keeps width-proportional measures; a fixed
+  // measures-per-row shares the row width equally and spreads notes to fill each measure.
+  let widthOf,slotSpaceOf;
+  if(mpr>=1){
+    const availW=Math.max(lg*6,W-14-headW);
+    const forcedMW=availW/mpr;
+    widthOf=()=>forcedMW;
+    slotSpaceOf=i=>{const sl=Math.max(1,slotsOf[i]);return sl<=1?0:Math.max(lg*.9,(forcedMW-leftPad-rightPad)/(sl-1));};
+  } else {
+    widthOf=autoW;
+    slotSpaceOf=()=>noteSpace;
+  }
   const finished=pieceCursor>=pieceQueue.length;
   const step=pieceQueue[Math.min(pieceCursor,pieceQueue.length-1)];
   const curMi=step?step.measureIdx:0;
@@ -2414,7 +2466,7 @@ function drawPieceStaff(){
   const ctx=setupHiDPICanvas(canvas,W,totalH);
   ctx.clearRect(0,0,W,totalH);
   const colors=getColors();
-  const P={piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,mW,noteSpace,W};
+  const P={piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,widthOf,slotSpaceOf,leftPad,W};
   for(let r=0;r<visN;r++){
     drawPieceSystem(ctx,P,lines[winStart+r],r*sysH,curMi,step,finished);
   }
@@ -2433,7 +2485,7 @@ function drawPieceStaff(){
 // Render a single staff system (one line of measures) at vertical offset `yOff`. Extracted
 // from drawPieceStaff so the practice view can stack several systems for reading ahead.
 function drawPieceSystem(ctx,P,line,yOff,curMi,step,finished){
-  const {piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,mW,noteSpace,W}=P;
+  const {piece,grand,topIsBass,lg,met,fifths,scalePcs,colors,headW,widthOf,slotSpaceOf,leftPad,W}=P;
   const {ink,ink2,ink3,green,bg,greenLight}=colors;
   const doneColor='#9FE1CB';
   const tTop=met.tTop+yOff;
@@ -2443,9 +2495,9 @@ function drawPieceSystem(ctx,P,line,yOff,curMi,step,finished){
   // current-measure highlight band goes underneath the staff lines (only on its line)
   if(!finished&&curMi>=line.start&&curMi<=line.end){
     let bandX=headW;
-    for(let mi=line.start;mi<curMi;mi++)bandX+=mW(mi);
+    for(let mi=line.start;mi<curMi;mi++)bandX+=widthOf(mi);
     ctx.fillStyle=greenLight;ctx.globalAlpha=.4;
-    ctx.fillRect(bandX-lg*.4,tTop-lg*2.4,mW(curMi),staffBottom-tTop+lg*4.4);
+    ctx.fillRect(bandX-lg*.4,tTop-lg*2.4,widthOf(curMi),staffBottom-tTop+lg*4.4);
     ctx.globalAlpha=1;
   }
 
@@ -2479,7 +2531,8 @@ function drawPieceSystem(ctx,P,line,yOff,curMi,step,finished){
   ctx.font=`9px IBM Plex Mono`;
   for(let mi=line.start;mi<=line.end;mi++){
     const meas=piece.measures[mi];
-    const wM=mW(mi);
+    const wM=widthOf(mi);
+    const slotSpace=slotSpaceOf(mi);
     // measure number
     ctx.fillStyle=ink3;ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
     ctx.fillText(String(mi+1),xm-lg*.2,tTop-lg*1.7);
@@ -2489,7 +2542,7 @@ function drawPieceSystem(ctx,P,line,yOff,curMi,step,finished){
     const onsets=[...new Set(meas.events.map(e=>e.onset.toFixed(4)))].sort((a,b)=>+a-+b);
     meas.events.forEach(ev=>{
       const idx=onsets.indexOf(ev.onset.toFixed(4));
-      const ex=xm+lg*1.2+idx*noteSpace;
+      const ex=xm+leftPad+idx*slotSpace;
       const inHand=pieceOpts.hand==='both'||ev.hand===pieceOpts.hand;
       let state='future';
       if(finished)state='past';
@@ -2707,7 +2760,7 @@ function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       score,levelScores,levelAttempts,missedNotes,errorStats,responseStats,rhythmScore,
-      settings:{level,clef,hintMode,answerMode,adaptiveMode,showFingering,pieceViewRows}
+      settings:{level,clef,hintMode,answerMode,adaptiveMode,showFingering,pieceViewRows,pieceMeasuresPerRow}
     }));
   }catch(e){}
 }
@@ -2731,7 +2784,8 @@ function loadState(){
       if(st.answerMode)answerMode=st.answerMode;
       adaptiveMode=!!st.adaptiveMode;
       if(typeof st.showFingering==='boolean')showFingering=st.showFingering;
-      if(typeof st.pieceViewRows==='number')pieceViewRows=Math.max(1,Math.min(3,Math.round(st.pieceViewRows)));
+      if(typeof st.pieceViewRows==='number')pieceViewRows=Math.max(1,Math.min(4,Math.round(st.pieceViewRows)));
+      if(typeof st.pieceMeasuresPerRow==='number')pieceMeasuresPerRow=st.pieceMeasuresPerRow<1?0:Math.min(8,Math.round(st.pieceMeasuresPerRow));
     }
   }catch(e){}
 }
@@ -2746,6 +2800,7 @@ function applySettingsToControls(){
   const fb=document.getElementById('fingeringBtn');
   if(fb){fb.classList.toggle('on',showFingering);fb.setAttribute('aria-pressed',String(showFingering));}
   const pr=document.getElementById('pieceRowsSel');if(pr)pr.value=String(pieceViewRows);
+  const mprS=document.getElementById('pieceMprSel');if(mprS)mprS.value=pieceMeasuresPerRow?String(pieceMeasuresPerRow):'auto';
 }
 
 function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}

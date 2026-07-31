@@ -238,7 +238,7 @@ test('the current line stays visible as the cursor advances across systems', asy
   expect(Math.abs(visible.endH - visible.twoRowH)).toBeLessThan(1);
 });
 
-test('pieceViewRows clamps to 1–3 and persists to localStorage', async ({ page }) => {
+test('pieceViewRows clamps to 1–4 and persists to localStorage', async ({ page }) => {
   const r = await page.evaluate(() => {
     setPieceViewRows(9);
     const hi = pieceViewRows;
@@ -248,7 +248,7 @@ test('pieceViewRows clamps to 1–3 and persists to localStorage', async ({ page
     const saved = JSON.parse(localStorage.getItem('chordpath.v3') || '{}');
     return { hi, lo, savedRows: saved.settings && saved.settings.pieceViewRows };
   });
-  expect(r.hi).toBe(3);
+  expect(r.hi).toBe(4);
   expect(r.lo).toBe(1);
   expect(r.savedRows).toBe(3);
 });
@@ -261,4 +261,96 @@ test('the rows selector reflects the restored setting', async ({ page }) => {
     return (document.getElementById('pieceRowsSel') as HTMLSelectElement).value;
   });
   expect(val).toBe('3');
+});
+
+// ——— Configurable measures per row (reading grid) ———
+
+test('measures/row packs exactly the chosen number of measures into each system', async ({ page }) => {
+  const id = await loadLongPiece(page); // 24 measures
+  const r = await page.evaluate((pid) => {
+    const p = pieces.find((x: any) => x.id === pid)!;
+    const spans = (mpr: number) =>
+      buildPieceLines(p, 1200, mpr).lines.map((L: any) => L.end - L.start + 1);
+    return { four: spans(4), two: spans(2), eight: spans(8) };
+  }, id);
+  // 24 measures at 4/row → 6 full systems of 4
+  expect(r.four).toEqual([4, 4, 4, 4, 4, 4]);
+  // at 2/row → 12 systems of 2
+  expect(r.two).toEqual(Array(12).fill(2));
+  // at 8/row → 3 systems of 8
+  expect(r.eight).toEqual([8, 8, 8]);
+});
+
+test('the last system holds the remainder when measures do not divide evenly', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    const measures: any[] = [];
+    for (let i = 0; i < 10; i++) measures.push({ number: i + 1, events: [{ onset: 0, duration: 4, midis: [60], hand: 'R', fingerings: null }] });
+    const p = importPieceObject({
+      title: 'Ten', source: 'musicxml',
+      keySig: { fifths: 0, mode: 'major', tonic: 0, name: 'C major', detected: false },
+      timeSig: { beats: 4, beatType: 4 }, tempo: 100, measures,
+    } as any);
+    return buildPieceLines(p, 1200, 4).lines.map((L: any) => L.end - L.start + 1);
+  });
+  expect(r).toEqual([4, 4, 2]); // 10 measures → 4 + 4 + 2
+});
+
+test('auto (0) still wraps by width rather than a fixed count', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  const r = await page.evaluate((pid) => {
+    const p = pieces.find((x: any) => x.id === pid)!;
+    const auto = buildPieceLines(p, 1200, 0).lines;
+    const narrow = buildPieceLines(p, 600, 0).lines;
+    return { autoLines: auto.length, narrowLines: narrow.length };
+  }, id);
+  // a narrower surface fits fewer measures per row → more systems
+  expect(r.autoLines).toBeGreaterThanOrEqual(1);
+  expect(r.narrowLines).toBeGreaterThan(r.autoLines);
+});
+
+test('measures/row = 4 with rows = 3 shows a 4×3 reading grid (target state)', async ({ page }) => {
+  const id = await loadLongPiece(page);
+  const r = await page.evaluate((pid) => {
+    const canvas = document.getElementById('staffCanvas') as HTMLCanvasElement;
+    startPiecePractice(pid, { hand: 'both' });
+    setPieceMeasuresPerRow(4);
+    setPieceViewRows(3);
+    const h3 = parseFloat(canvas.style.height);
+    setPieceViewRows(1);
+    const h1 = parseFloat(canvas.style.height);
+    return { h3, h1, mpr: pieceMeasuresPerRow, rows: 3 };
+  }, id);
+  expect(r.mpr).toBe(4);
+  // three visible rows are ~3× the height of one row
+  expect(r.h3).toBeGreaterThan(r.h1 * 2.5);
+});
+
+test('setPieceMeasuresPerRow clamps, maps auto↔0, and persists', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    setPieceMeasuresPerRow('auto');
+    const auto = pieceMeasuresPerRow;
+    setPieceMeasuresPerRow(99);
+    const hi = pieceMeasuresPerRow;
+    setPieceMeasuresPerRow(4);
+    const saved = JSON.parse(localStorage.getItem('chordpath.v3') || '{}');
+    return { auto, hi, saved: saved.settings && saved.settings.pieceMeasuresPerRow };
+  });
+  expect(r.auto).toBe(0);
+  expect(r.hi).toBe(8);
+  expect(r.saved).toBe(4);
+});
+
+test('the measures/row selector reflects the restored setting', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    setPieceMeasuresPerRow(6);
+    (document.getElementById('pieceMprSel') as HTMLSelectElement).value = 'auto'; // desync
+    applySettingsToControls();
+    const six = (document.getElementById('pieceMprSel') as HTMLSelectElement).value;
+    setPieceMeasuresPerRow('auto');
+    applySettingsToControls();
+    const auto = (document.getElementById('pieceMprSel') as HTMLSelectElement).value;
+    return { six, auto };
+  });
+  expect(r.six).toBe('6');
+  expect(r.auto).toBe('auto');
 });
