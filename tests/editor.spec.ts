@@ -70,6 +70,46 @@ test('accidental, fingering and dynamic tools modify the selected note', async (
   expect(r.dyn).toBe('mf');
 });
 
+test('individual notes within a chord can be edited without disturbing siblings', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    editorNewScore({ staffType: 'grand', beats: 4, beatType: 4, measures: 1 });
+    // build an F4+C5 dyad in a single event (same hand + onset)
+    editorPlaceNote(0, 'R', 0, 65, 1); // F4
+    editorPlaceNote(0, 'R', 0, 72, 1); // C5
+    const ev = () => ED.piece.measures[0].events.find((e: any) => e.hand === 'R' && e.onset === 0);
+    const dyad = ev().midis.slice();
+
+    // select only the F4 notehead and move it down one diatonic step -> E4 (64); C5 (72) unchanged
+    ED.sel = { mi: 0, hand: 'R', onset: 0, midi: 65 };
+    editorNudgePitch(-1);
+    const afterNudge = ev().midis.slice();
+    const selTracked = ED.sel.midi; // selection should follow the moved note
+
+    // sharpen just the selected note: E4 (64) -> F4-ish (65); C5 untouched
+    editorApplyAccidental(1);
+    const afterAcc = ev().midis.slice();
+
+    // delete only the selected note, leaving the sibling behind
+    editorDeleteSelected();
+    const afterDelete = ev().midis.slice();
+
+    // whole-event selection (no midi) still nudges every note, preserving old behavior
+    ED.sel = { mi: 0, hand: 'R', onset: 0 };
+    editorPlaceNote(0, 'R', 0, 60, 1); // add C4 back so the event has a chord again: [60,72]
+    editorNudgePitch(1);
+    const wholeEvent = ev().midis.slice();
+
+    return { dyad, afterNudge, selTracked, afterAcc, afterDelete, wholeEvent };
+  });
+  expect(r.dyad).toEqual([65, 72]);            // F4, C5
+  expect(r.afterNudge).toEqual([64, 72]);      // E4, C5 — sibling untouched
+  expect(r.selTracked).toBe(64);               // selection followed the moved note
+  expect(r.afterAcc).toEqual([65, 72]);        // E4 sharpened, C5 still untouched
+  expect(r.afterDelete).toEqual([72]);         // only the selected note removed
+  // whole-event nudge shifts BOTH notes one diatonic step: [60,72] -> [62,74]
+  expect(r.wholeEvent).toEqual([62, 74]);
+});
+
 test('undo/redo history stack is unbounded within a session and restores state', async ({ page }) => {
   const r = await page.evaluate(() => {
     editorNewScore({ staffType: 'treble', beats: 4, beatType: 4, measures: 1 });
