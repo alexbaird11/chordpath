@@ -571,6 +571,12 @@ let score={correct:0,total:0,streak:0,bestStreak:0,xp:0};
 let levelScores=[0,0,0,0,0,0], levelAttempts=[0,0,0,0,0,0], missedNotes={};
 let micActive=false, midiActive=false, audioCtx=null, analyser=null, micStream=null, pitchTimer=null;
 let midiAccess=null, heldMidi=new Set();
+// Streaming note-follow input: practice is a moving target, and a real performance is a
+// stream of key presses that can arrive faster than any fixed "gather then compare" turn
+// loop can poll. We record note *onsets* here and match them to the target in order (see
+// registerNoteOn / resolvePendingInput) so fast runs, legato overlap, and chords all read.
+let midiOnsetBuffer=[];        // [{note, at}] onsets not yet matched to a target
+let midiResolveTimer=null;     // pending chord-gather evaluation
 let bpm=80, beatsPerBar=4, beatNote=4, metroOn=false, metroBeat=0, metroTimer=null, countInLeft=0;
 let customConfig={roots:null,types:null,clefs:['treble'],inversion:'root',rhythm:false,rhythmBPM:80};
 let rhythmTimer=null;
@@ -2213,6 +2219,7 @@ function startPiecePractice(pieceId,opts){
   if(!q.length){setImportStatus('nothing to practice with those settings','err');return;}
   currentPiece=piece;pieceOpts=opts;pieceQueue=q;pieceCursor=0;
   practiceMode='piece';
+  resetInputMatcher();   // fresh run — drop any onsets buffered before the piece started
   assessRun=opts.assess?{perMeasure:{},startedAt:Date.now()}:null;
   if(opts.tempoPct&&piece.tempo)setBPM(Math.round(piece.tempo*opts.tempoPct/100));
   showTab('practice');
@@ -2297,6 +2304,7 @@ function finishPieceRun(){
 
 function exitPiecePractice(){
   practiceMode='drill';
+  resetInputMatcher();
   currentPiece=null;pieceQueue=[];pieceCursor=0;assessRun=null;
   const banner=document.getElementById('pieceBanner');
   if(banner)banner.style.display='none';
@@ -2666,7 +2674,10 @@ function checkAnswer(played,playedAt=null){
     updateUI();saveState();
     if(practiceMode==='piece'){
       recordAssess(true,responseMs);
-      setTimeout(advancePiece,450);
+      // Advance immediately so input stays in lock-step with a player performing at tempo.
+      // The green staff flash (above) is the non-blocking "correct" cue; a fixed pause here
+      // would force the app to fall behind a fast stream and drop the buffered onsets.
+      advancePiece();
     } else if(currentEx.type==='progression'&&currentEx.chordIdx<currentEx.chords.length-1){
       currentEx.chordIdx++;
       const ch=currentEx.chords[currentEx.chordIdx];
@@ -2920,21 +2931,78 @@ function autoCorr(buf,sr){
   return sr/T;
 }
 
+// ——— Streaming note-follow input matcher ———
+// Each practice step (a single note or a chord) is the note the reader must play next, and a
+// performance is a *stream* of onsets that can arrive faster than a fixed debounce can poll —
+// with legato playing the next key often goes down before the last is released. So rather than
+// snapshotting the currently-held keys after a debounce, we record note *onsets* and match them
+// to the target in order: a single-note target resolves on the very next onset (fast runs
+// register note by note), a chord target gathers near-simultaneous onsets within a short window,
+// and onsets the player is already ahead by stay queued and match as the target advances.
+const CHORD_GATHER_MS=130;   // window to collect the notes of a chord target
+const SINGLE_GATHER_MS=45;   // safety window for a lone-note target (normally resolves at once)
+
+function midiTargetSize(){ return (targetMidis&&targetMidis.length)?targetMidis.length:1; }
+
+function registerNoteOn(note,at){
+  heldMidi.add(note);
+  midiOnsetBuffer.push({note,at:(at==null?performance.now():at)});
+  if(midiOnsetBuffer.length>=midiTargetSize()) resolvePendingInput(false);
+  else scheduleInputResolve();
+}
+function registerNoteOff(note){ heldMidi.delete(note); }
+
+function scheduleInputResolve(){
+  if(midiResolveTimer)return;
+  const win=midiTargetSize()>1?CHORD_GATHER_MS:SINGLE_GATHER_MS;
+  const firstAt=midiOnsetBuffer.length?midiOnsetBuffer[0].at:performance.now();
+  const wait=Math.max(0,win-(performance.now()-firstAt));
+  midiResolveTimer=setTimeout(()=>resolvePendingInput(true),wait);
+}
+
+// Match buffered onsets against the current target, one group at a time. `force` evaluates an
+// incomplete chord (its gather window elapsed) so a genuinely missed note is still scored.
+function resolvePendingInput(force){
+  clearTimeout(midiResolveTimer);midiResolveTimer=null;
+  let guard=0;
+  while(midiOnsetBuffer.length && guard++<1024){
+    if(practiceMode==='piece' && pieceCursor>=pieceQueue.length){midiOnsetBuffer.length=0;break;}
+    const need=midiTargetSize();
+    if(midiOnsetBuffer.length<need && !force){scheduleInputResolve();return;}
+    const group=midiOnsetBuffer.splice(0,Math.min(need,midiOnsetBuffer.length));
+    const played=group.map(o=>o.note);
+    const playedAt=group[group.length-1].at;
+    const before=pieceCursor;
+    checkAnswer(played,playedAt);
+    force=false;   // only the first (timed-out) group is forced
+    if(practiceMode==='piece'){
+      // Wrong note: reset to the current target and let the next press retry, rather than
+      // matching stale queued onsets out of position. Correct: loop so a player who is
+      // already ahead pulls the target up to where they are.
+      if(pieceCursor===before){midiOnsetBuffer.length=0;break;}
+    }else{
+      midiOnsetBuffer.length=0;break;   // drills score one attempt per gathered group
+    }
+  }
+}
+
+function resetInputMatcher(){ clearTimeout(midiResolveTimer);midiResolveTimer=null;midiOnsetBuffer.length=0;heldMidi.clear(); }
+
 // ——— MIDI ———
 async function toggleMidi(){
   if(midiActive){
-    midiActive=false;const b=document.getElementById('midiBtn');b.classList.remove('on');b.textContent='MIDI off';return;
+    midiActive=false;resetInputMatcher();const b=document.getElementById('midiBtn');b.classList.remove('on');b.textContent='MIDI off';return;
   }
   if(!navigator.requestMIDIAccess){alert('Web MIDI API not supported. Please use Chrome or Edge.');return}
   try{
     midiAccess=await navigator.requestMIDIAccess();
-    midiActive=true;heldMidi.clear();
+    midiActive=true;resetInputMatcher();
     const b=document.getElementById('midiBtn');b.classList.add('on');b.textContent='MIDI on';
     midiAccess.inputs.forEach(inp=>{
       inp.onmidimessage=e=>{
         const[st,note,vel]=e.data;
-        if((st&0xF0)===0x90&&vel>0){heldMidi.add(note);clearTimeout(window._mt);window._mt=setTimeout(()=>checkAnswer([...heldMidi],performance.now()),110)}
-        else if((st&0xF0)===0x80||((st&0xF0)===0x90&&vel===0))heldMidi.delete(note);
+        if((st&0xF0)===0x90&&vel>0)registerNoteOn(note,performance.now());
+        else if((st&0xF0)===0x80||((st&0xF0)===0x90&&vel===0))registerNoteOff(note);
       };
     });
     if(midiAccess.inputs.size===0)alert('No MIDI devices found. Connect a keyboard and refresh.');
